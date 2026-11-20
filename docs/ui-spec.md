@@ -130,7 +130,6 @@ The backlight is off and nothing is drawn. Touch is ignored.
 ### 4.9 Hold overlay
 While a button is held (§5), a dark overlay (black at 72%) covers the screen, showing an icon, a label and a progress bar that fills over the last 550 ms. The destinations are:
 - **Back:** arrow icon, `Back` / `返回`.
-- **Lock:** padlock icon, `Lock` / `锁屏`.
 - **Sleep:** moon icon, `Sleep` / `休眠`.
 
 ### 4.10 Pages (touch only)
@@ -148,7 +147,7 @@ Not every feature needs a button. Only frequent actions are on keys. Pages are r
   - **Colour:** the percentage and bar use text colour, due colour at ≥ 80%, and rec colour at ≥ 95%.
   - **No data:** `No usage data yet` / `暂无用量数据`.
 - **MD page:** a placeholder for now. Show an atom icon, `Coming soon` / `即将上线`, and `Simulation progress will show here.` / `模拟进度将显示在这里。`
-- **Keys on a page:** PLUS records. OK or NEXT press returns to Today. Hold OK goes to Lock. Hold NEXT sleeps.
+- **Keys on a page:** PLUS records. OK or NEXT press returns to Today. Hold OK or hold NEXT sleeps.
 - **Lock screen:** taps are ignored and pages can't be opened from it. Only its own swipes (notes, unlock) work.
 - **Freshness:** page data refreshes only when the device syncs. That's why every data page shows when it was last updated.
 
@@ -205,17 +204,17 @@ Not every feature needs a button. Only frequent actions are on keys. Pages are r
 |---|---|---|---|---|---|---|
 | Sleep | Wake **and start recording** | Wake to Lock | — | — | — | Ignored |
 | Lock | Start recording | Next note | Sleep | Unlock to Today | Sleep | Swipe left/right (≥ 24 px): next/previous note. Swipe up (≥ 60 px): unlock. Taps ignored |
-| Today | Start recording | Move highlight: task 1 → … → task n → bottom line → task 1 | Sleep | Task: check off or undo. Bottom line: open picker | Go to Lock | Tap a task: check it off. Tap the bottom line: open picker. Swipe the bottom line left/right: next/previous task (highlights the line and pauses rotation). **Swipe elsewhere: pages (§4.10). Swipe down from the top: quick panel (§4.11)** |
+| Today | Start recording | Move highlight: task 1 → … → task n → bottom line → task 1 | Sleep | Task: check off or undo. Bottom line: open picker | Sleep | Tap a task: check it off. Tap the bottom line: open picker. Swipe the bottom line left/right: next/previous task (highlights the line and pauses rotation). **Swipe elsewhere: pages (§4.10). Swipe down from the top: quick panel (§4.11)** |
 | Picker | Start recording (closes picker) | Next task | — | Move the task shown into Today | Back to Today (highlight stays on the bottom line) | Swipe: next/previous. Cancel/Move buttons |
 | Recording | Stop and save | — | — | — | — | — |
 | Saved, Syncing | Start recording (pauses the sync) | — | — | — | — | — |
 | Error | Start recording (if possible) | — | — | Dismiss | — | — |
-| Page (Claude, MD) | Start recording | Back to Today | Sleep | Back to Today | Lock | Swipe left/right: next/previous page. Swipe down from the top: quick panel. Taps do nothing |
+| Page (Claude, MD) | Start recording | Back to Today | Sleep | Back to Today | Sleep | Swipe left/right: next/previous page. Swipe down from the top: quick panel. Taps do nothing |
 | Quick panel | Start recording | Close | Sleep | Close | Close | Tap tiles / All settings; tap or drag the brightness bar; swipe up: close |
 | Settings | Start recording | Highlight next row | Sleep | Change highlighted row | Back | Tap a row; swipe up/down: scroll; swipe right: back |
 | Brightness | Start recording | +5% (wraps) | Sleep | Back to Settings | Back to Settings | Tap or drag the bar |
 
-- **What a hold of OK does:** go back one level, from the picker to Today, from Today to Lock, and from Lock to Sleep.
+- **What a hold of OK does:** at the top level (Today, a page, the lock screen), it **sleeps in one hold**, and waking always shows the lock screen. Inside a sub-screen (the picker, the quick panel, settings, brightness), it goes **back** one level. The hold overlay shows `Sleep` or `Back` so the user knows which before releasing.
 - **Swipe:** a horizontal movement of more than 12 device px that is larger than the vertical movement (lock screen: 24 px sideways, 60 px up). A swipe must never also count as a tap.
 - **Bottom line timeout:** if the bottom line stays highlighted for 10 s with no input, the highlight returns to task 1 and the rotation resumes.
 - **Recording from sleep:** if a recording was started from Sleep, return to Sleep once its save and sync (or the offline fallback) have finished.

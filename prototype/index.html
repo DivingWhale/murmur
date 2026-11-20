@@ -303,10 +303,10 @@ h2{font-size:18px;margin:56px 0 4px}
         <dl class="map">
           <dt>PLUS</dt><dd>Start recording right away. Press again to stop and save. Works from any screen, pauses a sync in progress, and <b>wakes the device from sleep straight into recording</b>. After that recording is saved and synced, it goes back to sleep.</dd>
           <dt>NEXT</dt><dd>Press: move the highlight down Today, then onto the When I Have Time line (one stop), then back to the top. <b>In “Move to Today?”:</b> press to see the next When I Have Time task.  <b>Hold 0.8 s:</b> sleep straight away (screen off). <b>While asleep:</b> press to wake to the lock screen.</dd>
-          <dt>OK</dt><dd>On a Today task: check it off (or undo). On the When I Have Time line: opens “Move to Today?” for the task shown; press again to move it into Today. <b>Hold 0.8 s: back one level</b> — “Move to Today?” → Today → lock screen → sleep. The screen shows where you’re going; release early to cancel.</dd>
+          <dt>OK</dt><dd>On a Today task: check it off (or undo). On the When I Have Time line: opens “Move to Today?” for the task shown; press again to move it into Today. <b>Hold 0.8 s:</b> on Today, a page or the lock screen → <b>sleep</b> in one hold (waking shows the lock screen). Inside the picker, quick panel or settings → <b>back</b>. The screen shows which; release early to cancel.</dd>
           <dt>Lock</dt><dd>Cycles through Miscellaneous notes chosen on the computer. OK unlocks, NEXT shows the next note, PLUS records. <b>Swipe left/right</b> (≥ 24 px ≈ 2.8 mm) to change notes; <b>swipe up</b> (≥ 60 px ≈ 7 mm, a quarter of the screen) to unlock. Taps are ignored, so it stays safe in a pocket.</dd>
           <dt>Panel</dt><dd><b>Swipe down from the top edge</b> of Today or a page: Wi-Fi status, Sync now, language, a big brightness bar (20 levels — tap or drag), All settings. Swipe up or OK closes it. In Settings, swipe up/down to scroll, tap a row to change it, swipe right or hold OK to go back. NEXT/OK step through rows.</dd>
-          <dt>Pages</dt><dd><b>Touch only.</b> On Today, swipe left/right (anywhere except the bottom line) for Today → Claude usage → MD simulations. On a page, OK or NEXT returns to Today; hold OK = lock, hold NEXT = sleep, PLUS records.</dd>
+          <dt>Pages</dt><dd><b>Touch only.</b> On Today, swipe left/right (anywhere except the bottom line) for Today → Claude usage → MD simulations. On a page, OK or NEXT returns to Today; hold OK or NEXT = sleep, PLUS records.</dd>
           <dt>Touch</dt><dd>Tap a task to check it off. <b>Swipe left/right on the bottom line</b> to browse When I Have Time (the rotation stops; it resumes after 10 s idle). Tapping the bottom line opens “Move to Today?” with large Move and Cancel buttons. It cancels by itself after 8 s, so a stray touch never moves anything.</dd>
         </dl>
       </div>
@@ -939,9 +939,9 @@ function backToSleep(){if(S.fromSleep){S.fromSleep=false;S.mode='sleep';log('Bac
 function holdTarget(btn){
   if(btn==='next')return ['list','lock','page','panel','settings','bright'].includes(S.mode)?'sleep':null;
   if(S.mode==='panel'||S.mode==='settings'||S.mode==='bright')return 'back';
-  if(S.mode==='page')return 'lock';
-  if(S.mode==='list')return S.confirm?'back':'lock';
-  if(S.mode==='lock')return 'sleep';
+  /* top level (Today, pages, lock): one hold = sleep; waking always shows the lock screen */
+  if(S.mode==='list')return S.confirm?'back':'sleep';
+  if(S.mode==='page'||S.mode==='lock')return 'sleep';
   return null;
 }
 function doHold(btn){
