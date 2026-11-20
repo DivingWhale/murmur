@@ -12,6 +12,7 @@ Press a button, say what you want to remember, and put the device back in your p
 | Handheld UI / firmware | [docs/ui-spec.md](docs/ui-spec.md): **source of truth** for screens, controls, sizes and text |
 | Lock-screen notes (computer ↔ Pi ↔ handheld) | [docs/lockscreen-api.md](docs/lockscreen-api.md) |
 | Claude usage page (5-hour / weekly limits) | [docs/claude-usage-api.md](docs/claude-usage-api.md) |
+| Joining the campus Wi-Fi (WPA2-Enterprise, PEAP) | [docs/campus-wifi.md](docs/campus-wifi.md) |
 
 ## Repository layout
 
@@ -21,6 +22,7 @@ docs/
   ui-spec.md            handheld UI implementation spec
   lockscreen-api.md     lock-screen notes API contract
   claude-usage-api.md   Claude usage page data contract
+  campus-wifi.md        campus Wi-Fi (PEAP) setup and firmware notes
 prototype/
   index.html            interactive UI prototype (reference only)
   api/v1/               mock API responses used by the prototype

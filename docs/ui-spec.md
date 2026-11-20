@@ -152,6 +152,51 @@ Not every feature needs a button. Only frequent actions are on keys. Pages are r
 - **Lock screen:** taps are ignored and pages can't be opened from it. Only its own swipes (notes, unlock) work.
 - **Freshness:** page data refreshes only when the device syncs. That's why every data page shows when it was last updated.
 
+### 4.11 Quick panel (swipe down)
+- **Open:** swipe down (≥ 30 px) starting in the top 32 px (header band) of Today or a page. It slides down (0.28 s).
+- **Close:** swipe up (≥ 30 px), press OK or NEXT, or hold OK. Closing returns to the screen it was opened from.
+- **Layout** (10px padding, 8px gaps, background `#121418`):
+  1. **Status row (24px):** Wi-Fi icon (or Wi-Fi-off), network name (SSID), and `Synced 10:40` / `已同步 10:40` or `Offline` / `离线`.
+  2. **Two tiles (66px each, 12px radius):**
+     - **Sync now** / `立即同步`: connects, syncs and returns to Today. Offline: shows the toast `Offline`.
+     - **Language** / `语言`: shows `EN` or `中` and toggles the screen-label language.
+  3. **Brightness bar (52px tall, full width):** see below.
+  4. **All settings ›** / `全部设置` (48px): opens Settings.
+  5. A 36 × 4 px grab handle at the bottom, hinting that a swipe up closes the panel.
+- **Brightness:**
+  - **20 levels** in 5% steps (minimum 5%), default 80%. These map to backlight PWM.
+  - The **whole bar is the touch target**: tap or drag anywhere on it to set the level.
+  - The fill is in text colour on a `#2A2D33` track, with a sun icon on the left and the percentage on the right. The label turns dark once the fill reaches it (≥ 80%).
+
+### 4.12 Settings
+- **Header:** `‹ Settings` / `‹ 设置` (tap to go back) and battery.
+- **List:** rows 56px tall (≈ 6.5 mm). 3½ rows are visible, so the cut-off last row hints that the list scrolls.
+  - **Touch, scrolling:** continuous, like a phone list.
+    - **Drag:** the list follows the finger pixel for pixel.
+    - **Flick:** keeps the velocity and slows down (×0.94 per 16 ms). Releasing after a pause (> 80 ms) doesn't fling.
+    - **Edges:** past the top or bottom, the list moves at 35% of the finger, then springs back. In LVGL, use a scrollable container with momentum and elastic edges (`LV_OBJ_FLAG_SCROLL_MOMENTUM`, `LV_OBJ_FLAG_SCROLL_ELASTIC`).
+  - **Touch, other:** movement under 6 px counts as a tap and changes the row. Swipe right (≥ 40 px) goes back.
+  - **Keys:** NEXT highlights the next row (wrapping). The list scrolls smoothly (200 ms ease-out) to keep that row fully in view. OK changes the highlighted row. Hold OK goes back.
+
+| Row | Value | Action |
+|---|---|---|
+| Wi-Fi / `Wi-Fi` | SSID; sub-line `Last sync 10:40` or `Unavailable` | Status only. Credentials are set over USB (`docs/campus-wifi.md`) |
+| Sync now / `立即同步` | sub-line: last sync time | Sync |
+| Language / `语言` | `English` / `中文` | Toggle |
+| Brightness / `亮度` | `80%` | Opens the Brightness screen |
+| Auto-sleep / `自动休眠` | `30 s` · `1 min` · `5 min` · `Never` (default 1 min) | Cycle |
+| Storage / `存储` | `12.4 GB free` (rec colour `Card full` when full) | — |
+| Battery / `电量` | `80%`, `· charging` | — |
+| Clock / `时钟` | `HH:MM`; sub-line: date | — |
+| Firmware / `固件` | `Murmur 0.1.0` | — |
+
+- **Brightness screen:**
+  - **Header:** `‹ Brightness`.
+  - **Contents:** the percentage at 40px bold, and below it a full-width bar 72px tall (≈ 8.3 mm). Tap or drag anywhere on the bar to set the level.
+  - **Hint:** `Drag or tap · NEXT +5%`.
+  - **Keys:** NEXT adds 5% (after 100% it wraps to 5%). OK or hold OK returns to Settings.
+- **Auto-sleep:** after the chosen idle time on Lock, Today, a page, the panel or settings, go to Sleep. Any button press or touch resets the timer. The timer is paused while the Move to Today? picker is open (it has its own 8 s timeout).
+
 ## 5. Controls
 
 **There is no double-press anywhere.** A press acts **on release**. A hold acts at **800 ms**. The overlay appears at 250 ms, so the user can see what will happen and release early to cancel.
@@ -160,12 +205,15 @@ Not every feature needs a button. Only frequent actions are on keys. Pages are r
 |---|---|---|---|---|---|---|
 | Sleep | Wake **and start recording** | Wake to Lock | — | — | — | Ignored |
 | Lock | Start recording | Next note | Sleep | Unlock to Today | Sleep | Swipe left/right (≥ 24 px): next/previous note. Swipe up (≥ 60 px): unlock. Taps ignored |
-| Today | Start recording | Move highlight: task 1 → … → task n → bottom line → task 1 | Sleep | Task: check off or undo. Bottom line: open picker | Go to Lock | Tap a task: check it off. Tap the bottom line: open picker. Swipe the bottom line left/right: next/previous task (highlights the line and pauses rotation). **Swipe elsewhere: pages (§4.10)** |
+| Today | Start recording | Move highlight: task 1 → … → task n → bottom line → task 1 | Sleep | Task: check off or undo. Bottom line: open picker | Go to Lock | Tap a task: check it off. Tap the bottom line: open picker. Swipe the bottom line left/right: next/previous task (highlights the line and pauses rotation). **Swipe elsewhere: pages (§4.10). Swipe down from the top: quick panel (§4.11)** |
 | Picker | Start recording (closes picker) | Next task | — | Move the task shown into Today | Back to Today (highlight stays on the bottom line) | Swipe: next/previous. Cancel/Move buttons |
 | Recording | Stop and save | — | — | — | — | — |
 | Saved, Syncing | Start recording (pauses the sync) | — | — | — | — | — |
 | Error | Start recording (if possible) | — | — | Dismiss | — | — |
-| Page (Claude, MD) | Start recording | Back to Today | Sleep | Back to Today | Lock | Swipe left/right: next/previous page. Taps do nothing |
+| Page (Claude, MD) | Start recording | Back to Today | Sleep | Back to Today | Lock | Swipe left/right: next/previous page. Swipe down from the top: quick panel. Taps do nothing |
+| Quick panel | Start recording | Close | Sleep | Close | Close | Tap tiles / All settings; tap or drag the brightness bar; swipe up: close |
+| Settings | Start recording | Highlight next row | Sleep | Change highlighted row | Back | Tap a row; swipe up/down: scroll; swipe right: back |
+| Brightness | Start recording | +5% (wraps) | Sleep | Back to Settings | Back to Settings | Tap or drag the bar |
 
 - **What a hold of OK does:** go back one level, from the picker to Today, from Today to Lock, and from Lock to Sleep.
 - **Swipe:** a horizontal movement of more than 12 device px that is larger than the vertical movement (lock screen: 24 px sideways, 60 px up). A swipe must never also count as a tap.
@@ -212,6 +260,8 @@ Applies to task titles and the bottom-line title.
 Every visible string has an English and a Chinese version; the full table is the `T` object in `prototype/index.html`. The screen-label language is a setting. Content (tasks and notes) shows in whatever language it was spoken, and its type size follows §3.
 
 ## 11. Open hardware questions (check before building)
+
+Campus Wi-Fi (WPA2-Enterprise, PEAP) is covered separately in `docs/campus-wifi.md`.
 
 1. **Buttons:** which GPIOs PLUS, NEXT and OK use, and whether all three can wake the ESP32-S3 from deep sleep. If they can't, use light sleep instead.
 2. **Charging:** whether the board reports charging status, which the lightning bolt needs.

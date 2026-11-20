@@ -30,7 +30,7 @@ h2{font-size:18px;margin:56px 0 4px}
 /* device */
 .device{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:22px}
 .bezel{background:#24262A;border-radius:44px;padding:28px;box-shadow:0 1px 0 #3a3d42 inset,0 18px 40px rgba(0,0,0,.22)}
-.zoom{width:480px;height:480px;border-radius:6px;overflow:hidden;background:var(--s-bg);touch-action:pan-y;-webkit-user-select:none;user-select:none}
+.zoom{width:480px;height:480px;border-radius:6px;overflow:hidden;background:var(--s-bg);touch-action:none;-webkit-user-select:none;user-select:none}
 /* hold-NEXT overlay: sized in container units so it matches the screen at 2× and actual size */
 /* container-type ignores content width, so the wrapper needs an explicit width matching .zoom */
 .swrap{position:relative;container-type:inline-size;width:480px;height:480px}
@@ -178,6 +178,44 @@ h2{font-size:18px;margin:56px 0 4px}
 @keyframes pgU2{from{transform:scale(2) translateY(40px);opacity:.2}to{transform:scale(2)}}
 .zoom.real > .scr.pg-u{animation:pgU3 .3s ease-out}
 @keyframes pgU3{from{transform:scale(.4362) translateY(40px);opacity:.2}to{transform:scale(.4362)}}
+.scr.pg-d{animation:pgD .28s ease-out}
+@keyframes pgD{from{transform:translateY(-40px);opacity:.2}}
+.zoom > .scr.pg-d{animation-name:pgD2}
+@keyframes pgD2{from{transform:scale(2) translateY(-40px);opacity:.2}to{transform:scale(2)}}
+.zoom.real > .scr.pg-d{animation:pgD3 .28s ease-out}
+@keyframes pgD3{from{transform:scale(.4362) translateY(-40px);opacity:.2}to{transform:scale(.4362)}}
+/* ---- Quick panel (swipe down from the top edge) ---- */
+.qp{position:absolute;inset:0;padding:10px 10px 0;display:flex;flex-direction:column;gap:8px;background:#121418}
+.qs{display:flex;align-items:center;gap:6px;height:24px;font-size:13px;color:var(--s-muted)}
+.qs svg{width:15px;height:15px;flex:0 0 auto}
+.qn{color:var(--s-text);font-weight:600;font-size:14px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.qb{height:66px;border-radius:12px;background:var(--s-surface);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:13px;font-weight:600;cursor:pointer;color:var(--s-text)}
+.qb b{font-size:19px;line-height:1}
+.qb svg{width:19px;height:19px}
+.qb.busy{color:var(--s-sync)}
+/* brightness: 20 levels (5% steps). One big bar — tap or drag anywhere on it. */
+.qsl{position:relative;height:52px;border-radius:12px;background:#2A2D33;overflow:hidden;cursor:ew-resize;touch-action:none}
+.qsl i{position:absolute;left:0;top:0;bottom:0;background:var(--s-text)}
+.qsl .ql{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:15px;font-weight:700;pointer-events:none}
+.qsl .ql svg{width:20px;height:20px}
+.bscr{position:absolute;top:32px;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:0 14px}
+.bpct{font-size:40px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.bscr .qsl{width:100%;height:72px;border-radius:14px}
+.bscr .hint{text-align:center}
+.qrow{height:48px;border-radius:12px;background:var(--s-surface);display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:16px;font-weight:600;cursor:pointer}
+.chev{color:var(--s-dim);font-size:20px;line-height:1}
+.grab{width:36px;height:4px;border-radius:2px;background:#3A3E45;margin:0 auto}
+.scr.zh .qb,.scr.zh .qs{font-size:14px}
+/* ---- Settings list ---- */
+.hd .sb{cursor:pointer}
+.sv{position:absolute;top:32px;left:0;right:0;bottom:0;overflow:hidden}
+.svi{padding-bottom:40px}
+.srow{height:56px;margin:0 5px;border-radius:9px;padding:0 10px;display:flex;align-items:center;gap:8px;cursor:pointer;border-bottom:1px solid var(--s-line)}
+.srow.f{background:var(--s-surface);box-shadow:inset 0 0 0 2px var(--s-focus);border-bottom-color:transparent}
+.sval{font-size:14px;color:var(--s-muted);white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis}
+.sval.warn{color:var(--s-rec)}
+.scr.zh .sval{font-size:15px}
 .scr.pg-bl{animation:pgBL .34s ease-out}.scr.pg-br{animation:pgBR .34s ease-out}
 @keyframes pgBL{30%{transform:translateX(-14px)}65%{transform:translateX(4px)}100%{transform:none}}
 @keyframes pgBR{30%{transform:translateX(14px)}65%{transform:translateX(-4px)}100%{transform:none}}
@@ -267,6 +305,7 @@ h2{font-size:18px;margin:56px 0 4px}
           <dt>NEXT</dt><dd>Press: move the highlight down Today, then onto the When I Have Time line (one stop), then back to the top. <b>In “Move to Today?”:</b> press to see the next When I Have Time task.  <b>Hold 0.8 s:</b> sleep straight away (screen off). <b>While asleep:</b> press to wake to the lock screen.</dd>
           <dt>OK</dt><dd>On a Today task: check it off (or undo). On the When I Have Time line: opens “Move to Today?” for the task shown; press again to move it into Today. <b>Hold 0.8 s: back one level</b> — “Move to Today?” → Today → lock screen → sleep. The screen shows where you’re going; release early to cancel.</dd>
           <dt>Lock</dt><dd>Cycles through Miscellaneous notes chosen on the computer. OK unlocks, NEXT shows the next note, PLUS records. <b>Swipe left/right</b> (≥ 24 px ≈ 2.8 mm) to change notes; <b>swipe up</b> (≥ 60 px ≈ 7 mm, a quarter of the screen) to unlock. Taps are ignored, so it stays safe in a pocket.</dd>
+          <dt>Panel</dt><dd><b>Swipe down from the top edge</b> of Today or a page: Wi-Fi status, Sync now, language, a big brightness bar (20 levels — tap or drag), All settings. Swipe up or OK closes it. In Settings, swipe up/down to scroll, tap a row to change it, swipe right or hold OK to go back. NEXT/OK step through rows.</dd>
           <dt>Pages</dt><dd><b>Touch only.</b> On Today, swipe left/right (anywhere except the bottom line) for Today → Claude usage → MD simulations. On a page, OK or NEXT returns to Today; hold OK = lock, hold NEXT = sleep, PLUS records.</dd>
           <dt>Touch</dt><dd>Tap a task to check it off. <b>Swipe left/right on the bottom line</b> to browse When I Have Time (the rotation stops; it resumes after 10 s idle). Tapping the bottom line opens “Move to Today?” with large Move and Cancel buttons. It cancels by itself after 8 s, so a stray touch never moves anything.</dd>
         </dl>
@@ -345,7 +384,11 @@ const T={
       clear:'All clear',clearSub:'Press + to capture a thought',synced:'Synced',waiting:n=>n+' waiting',rec:'REC',stop:'Press + to stop',
       syncPaused:'Sync paused · ',saved:'Saved',onCard:'on microSD',syncNext:'Syncing next',syncLater:'Will sync when online',syncing:'Syncing',
       steps:['Campus Wi-Fi','Uploaded to Pi','Turning into tasks'],recAny:'Press + to record anytime',full:'Card full',
-      fullSub:'This recording wasn’t saved.<br>Free up space on the microSD card.',dismiss:'OK to dismiss',lockHint:'OK/↑ unlock · + record',cuTitle:'Claude',cuSession:'5-HOUR',cuWeek:'WEEK',cuResets:(t,i)=>'Resets '+t+' · in '+i,cuUpd:t=>'Updated '+t,cuNone:'No usage data yet',dur:(d,hh,mm)=>d?d+' d '+hh+' h':hh?hh+' h '+mm+' m':mm+' m',wdays:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],mdTitle:'MD simulations',soon:'Coming soon',soonSub:'Simulation progress will show here.',
+      fullSub:'This recording wasn’t saved.<br>Free up space on the microSD card.',dismiss:'OK to dismiss',lockHint:'OK/↑ unlock · + record',pSynced:t=>'Synced '+t,pOffline:'Offline',pSyncing:'Syncing…',syncNow:'Sync now',language:'Language',allSettings:'All settings',
+      setTitle:'Settings',sWifi:'Wi-Fi',sWifiOn:'Connected when syncing',sWifiOff:'Unavailable',sLast:t=>'Last sync '+t,sLang:'Language',sLangV:'English',
+      sBright:'Brightness',brightHint:'Drag or tap · NEXT +5%',sSleep:'Auto-sleep',sSleepV:{30:'30 s',60:'1 min',300:'5 min',0:'Never'},
+      sStorage:'Storage',sFree:g=>g+' free',sCardFull:'Card full',sBattery:'Battery',sCharging:'charging',sClock:'Clock',sFw:'Firmware',
+      cuTitle:'Claude',cuSession:'5-HOUR',cuWeek:'WEEK',cuResets:(t,i)=>'Resets '+t+' · in '+i,cuUpd:t=>'Updated '+t,cuNone:'No usage data yet',dur:(d,hh,mm)=>d?d+' d '+hh+' h':hh?hh+' h '+mm+' m':mm+' m',wdays:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],mdTitle:'MD simulations',soon:'Coming soon',soonSub:'Simulation progress will show here.',
       noNotes:'No notes chosen yet.<br>Pick Miscellaneous notes on your computer.',
       battLow:'Battery too low',battLowSub:'Charge the device to record.<br>Recording now could damage the file.',noteTime:iso=>{const t=wall(iso);return t?t.d+' '+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][t.m-1]+' · '+t.hm:'';},
       sep:' · ',toast:{task:'+1 task',noteTask:'+1 note · +1 task',tomorrow:'+1 task for tomorrow',synced:'Synced'}},
@@ -355,7 +398,11 @@ const T={
       clear:'全部完成',clearSub:'按 + 记录想法',synced:'已同步',waiting:n=>n+' 项待同步',rec:'录音中',stop:'按 + 停止',
       syncPaused:'同步已暂停 · ',saved:'已保存',onCard:'已存入 microSD',syncNext:'即将同步',syncLater:'联网后同步',syncing:'同步中',
       steps:['连接校园 Wi-Fi','上传到 Pi','整理成任务'],recAny:'随时按 + 录音',full:'存储卡已满',
-      fullSub:'本次录音未保存。<br>请清理 microSD 卡空间。',dismiss:'按 OK 关闭',lockHint:'OK/上滑 解锁 · + 录音',cuTitle:'Claude',cuSession:'5 小时',cuWeek:'本周',cuResets:(t,i)=>t+' 重置 · '+i+'后',cuUpd:t=>'更新于 '+t,cuNone:'暂无用量数据',dur:(d,hh,mm)=>d?d+' 天 '+hh+' 小时':hh?hh+' 小时 '+mm+' 分':mm+' 分',wdays:['周日','周一','周二','周三','周四','周五','周六'],mdTitle:'分子动力学',soon:'即将上线',soonSub:'模拟进度将显示在这里。',
+      fullSub:'本次录音未保存。<br>请清理 microSD 卡空间。',dismiss:'按 OK 关闭',lockHint:'OK/上滑 解锁 · + 录音',pSynced:t=>'已同步 '+t,pOffline:'离线',pSyncing:'同步中…',syncNow:'立即同步',language:'语言',allSettings:'全部设置',
+      setTitle:'设置',sWifi:'Wi-Fi',sWifiOn:'同步时连接',sWifiOff:'不可用',sLast:t=>'上次同步 '+t,sLang:'语言',sLangV:'中文',
+      sBright:'亮度',brightHint:'拖动或点按 · NEXT +5%',sSleep:'自动休眠',sSleepV:{30:'30 秒',60:'1 分钟',300:'5 分钟',0:'从不'},
+      sStorage:'存储',sFree:g=>'可用 '+g,sCardFull:'存储卡已满',sBattery:'电量',sCharging:'充电中',sClock:'时钟',sFw:'固件',
+      cuTitle:'Claude',cuSession:'5 小时',cuWeek:'本周',cuResets:(t,i)=>t+' 重置 · '+i+'后',cuUpd:t=>'更新于 '+t,cuNone:'暂无用量数据',dur:(d,hh,mm)=>d?d+' 天 '+hh+' 小时':hh?hh+' 小时 '+mm+' 分':mm+' 分',wdays:['周日','周一','周二','周三','周四','周五','周六'],mdTitle:'分子动力学',soon:'即将上线',soonSub:'模拟进度将显示在这里。',
       noNotes:'还没有选择笔记。<br>请在电脑上挑选随记。',
       battLow:'电量过低',battLowSub:'请先充电再录音。<br>现在录音可能损坏文件。',noteTime:iso=>{const t=wall(iso);return t?t.m+'月'+t.d+'日 '+t.hm:'';},
       sep:' · ',toast:{task:'+1 任务',noteTask:'+1 笔记 · +1 任务',tomorrow:'+1 明天的任务',synced:'已同步'}}
@@ -409,6 +456,8 @@ async function loadLock(){
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const I={
   check:'<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0B0C0E" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  wifi:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.6a10 10 0 0 1 14 0"/><path d="M1.5 9a15 15 0 0 1 21 0"/><path d="M8.5 16.4a5 5 0 0 1 7 0"/><path d="M12 20h.01"/></svg>',
+  sun:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
   sync:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8"/><path d="M4 3v5h5"/><path d="M4 13a8 8 0 0 0 14.3 4.9L20 16"/><path d="M20 21v-5h-5"/></svg>',
   off:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M5 12.9a10 10 0 0 1 5.2-2.8"/><path d="M19 12.9a10 10 0 0 0-2-1.4"/><path d="M2 8.8a15 15 0 0 1 4.2-2.7"/><path d="M22 8.8A15 15 0 0 0 11 5"/></svg>',
   done:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
@@ -435,6 +484,7 @@ function initial(ui,content){
   return {
     ui, content, mode:'lock', lockIdx:0, lockT:0, day:0, focus:0, confirm:false, confirmT:0, rot:0, rotT:0, elapsed:0, phaseT:0, lastLen:0,
     batt:78, charging:false, err:'card', slide:'', stripEntry:0, stripIdle:0, page:0, pslide:'',
+    bright:16, autoSleep:60, idle:0, ssid:'CampusNet', lastSync:'10:40', panelFrom:'list', panelPage:0, setFocus:0, setY:0,
     online:true, cardFull:false, pending:0, changes:0, toast:'', toastT:0, resIdx:0, nextId:100, recPausedSync:false,
     tasks:c.tasks, someday:c.someday, planned:c.planned, results:c.results,
     log:['Ready — locked, '+c.tasks.length+' tasks today']
@@ -456,6 +506,32 @@ function screen(s){
   const L=T[s.ui], h=[], cls='scr'+(s.ui==='zh'?' zh':'');
   const pg=s.pslide?' pg-'+s.pslide:'';
   const wrap=()=>'<div class="'+cls+pg+'" lang="'+(s.ui==='zh'?'zh-Hans':'en')+'">'+h.join('')+'</div>';
+  if(s.mode==='panel'){
+    const st=s.online?L.pSynced(s.lastSync):L.pOffline;
+    h.push('<div class="qp">'
+      +'<div class="qs">'+(s.online?I.wifi:I.off)+'<span class="qn">'+esc(s.ssid)+'</span><span>'+esc(st)+'</span></div>'
+      +'<div class="qg"><div class="qb" data-q="sync">'+I.sync+'<span>'+L.syncNow+'</span></div>'
+      +'<div class="qb" data-q="lang"><b>'+(s.ui==='zh'?'中':'EN')+'</b><span>'+L.language+'</span></div></div>'
+      +brightBar(s)
+      +'<div class="qrow" data-q="all"><span>'+L.allSettings+'</span><span class="chev">›</span></div>'
+      +'<div class="grab"></div></div>');
+    return wrap();
+  }
+  if(s.mode==='bright'){
+    h.push('<div class="hd"><div><span class="t sb" data-q="back">‹ '+L.sBright+'</span></div><span class="hr">'+battery(s)+'</span></div>');
+    h.push('<div class="bscr"><div class="bpct">'+s.bright*5+'%</div>'+brightBar(s,true)+'<div class="hint">'+L.brightHint+'</div></div>');
+    return wrap();
+  }
+  if(s.mode==='settings'){
+    const rows=settingsRows(s);
+    h.push('<div class="hd"><div><span class="t sb" data-q="back">‹ '+L.setTitle+'</span></div><span class="hr">'+battery(s)+'</span></div>');
+    h.push('<div class="sv"><div class="svi" style="transform:translateY('+(-(s.setY||0)).toFixed(1)+'px)">'+rows.map((r,i)=>
+      '<div class="srow'+(i===s.setFocus?' f':'')+'" data-r="'+r.id+'"><div class="tx"><div class="ti'+cj(r.title)+'">'+esc(r.title)+'</div>'
+      +(r.sub?'<div class="me'+cj(r.sub)+'">'+esc(r.sub)+'</div>':'')+'</div>'
+      +(r.value!=null?'<span class="sval'+(r.warn?' warn':'')+'">'+esc(r.value)+'</span>':'')
+      +(r.action&&r.value==null?'<span class="chev">›</span>':'')+'</div>').join('')+'</div></div>');
+    return wrap();
+  }
   if(s.mode==='page'){
     const title=s.page===1?L.cuTitle:L.mdTitle;
     h.push('<div class="hd"><div><span class="t">'+esc(title)+'</span></div><span class="hr">'+battery(s)+'</span></div>');
@@ -610,6 +686,7 @@ function mqFrame(now,once){
 }
 requestAnimationFrame(mqFrame);
 function draw(){
+  $('live').style.filter=S.bright>=20?'':'brightness('+Math.max(0.12,S.bright/20).toFixed(2)+')';
   const html=screen(S);
   if(html!==lastHtml){$('live').innerHTML=html;lastHtml=html;runMarquee();}
   $('log').innerHTML=S.log.map(l=>'<li>'+esc(l)+'</li>').join('');
@@ -639,6 +716,9 @@ function plus(){
 function next(){
   if(S.mode==='lock'){S.lockIdx++;S.lockT=0;draw();return;}
   if(S.mode==='page'){toPage(0,'r');return;}                /* NEXT on a page: back to Today */
+  if(S.mode==='panel'){closePanel();return;}
+  if(S.mode==='settings'){setFocusTo(S.setFocus+1);return;}
+  if(S.mode==='bright'){S.bright=S.bright>=20?1:S.bright+1;draw();return;}
   if(S.mode!=='list')return;
   if(S.confirm){browse('l');return;}                       /* picker: next item */
   /* Today: short loop — each task, then the When I Have Time line as ONE stop, then back to the top */
@@ -650,6 +730,9 @@ function ok(){
   if(S.mode==='error'){S.mode='list';draw();return;}
   if(S.mode==='lock'){S.mode='list';log('Unlocked');draw();return;}
   if(S.mode==='page'){toPage(0,'r');return;}                /* OK on a page: back to Today */
+  if(S.mode==='panel'){closePanel();return;}
+  if(S.mode==='settings'){activateSetting(settingsRows(S)[S.setFocus].id);return;}
+  if(S.mode==='bright'){S.mode='settings';log('Brightness '+S.bright*5+'%');draw();return;}
   if(S.mode!=='list')return;
   const n=S.tasks.length,f=Math.min(S.focus,n);
   if(f<n){
@@ -679,11 +762,115 @@ function finishSync(){
   }
   if(S.changes)log('Sent '+S.changes+' change(s) → Obsidian');
   if(!toast.length)toast=[T[S.ui].toast.synced];
-  S.pending=0;S.changes=0;S.mode='list';S.toast=toast.join(' · ');S.toastT=3;
+  S.lastSync=hhmm();S.pending=0;S.changes=0;S.mode='list';S.toast=toast.join(' · ');S.toastT=3;
   backToSleep();
   Promise.all([loadLock(),loadUsage()]).then(()=>{log('Wi-Fi off');draw();});
 }
+/* ---------- quick panel + settings ---------- */
+const hhmm=()=>{const d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
+const SLEEP_OPTS=[30,60,300,0];
+/* big brightness bar; label colour flips to dark once the fill reaches it */
+function brightBar(s,big){
+  const pct=s.bright*5, dark=pct>=80;
+  return '<div class="qsl" data-slider="1"><i style="width:'+pct+'%"></i><div class="ql" style="color:'+(dark?'#0B0C0E':'var(--s-text)')+'">'
+    +'<span style="color:'+(pct>=12?'#0B0C0E':'var(--s-muted)')+'">'+I.sun+'</span>'+(big?'':'<span>'+pct+'%</span>')+'</div></div>';
+}
+function setBrightFromX(clientX){
+  const el=$('live').querySelector('.qsl');if(!el)return;
+  const r=el.getBoundingClientRect(), f=Math.max(0,Math.min(1,(clientX-r.left)/r.width));
+  const b=Math.max(1,Math.ceil(f*20));
+  if(b!==S.bright){S.bright=b;draw();}
+}
+function settingsRows(s){
+  const L=T[s.ui];
+  return [
+    {id:'wifi',title:L.sWifi,sub:s.online?L.sLast(s.lastSync):L.sWifiOff,value:s.ssid},
+    {id:'sync',title:L.syncNow,sub:L.sLast(s.lastSync),action:true},
+    {id:'lang',title:L.sLang,value:L.sLangV,action:true},
+    {id:'bright',title:L.sBright,value:(s.bright*5)+'%',action:true},
+    {id:'sleep',title:L.sSleep,value:L.sSleepV[s.autoSleep],action:true},
+    {id:'storage',title:L.sStorage,value:s.cardFull?L.sCardFull:L.sFree('12.4 GB'),warn:s.cardFull},
+    {id:'battery',title:L.sBattery,value:(Math.round(s.batt/5)*5)+'%'+(s.charging?' · '+L.sCharging:'')},
+    {id:'clock',title:L.sClock,value:hhmm(),sub:L.lockDate(s.day)},
+    {id:'fw',title:L.sFw,value:'Murmur 0.1.0'}
+  ];
+}
+function openPanel(){
+  S.panelFrom=S.mode;S.panelPage=S.page;S.mode='panel';S.confirm=false;
+  S.pslide='d';clearTimeout(pslideT);pslideT=setTimeout(()=>{S.pslide='';draw();},300);
+  log('Swipe ↓ — quick panel');draw();
+}
+function closePanel(){
+  S.mode=S.panelFrom;S.page=S.panelPage;
+  S.pslide='u';clearTimeout(pslideT);pslideT=setTimeout(()=>{S.pslide='';draw();},300);
+  log('Quick panel closed');draw();
+}
+function openSettings(){
+  S.mode='settings';S.setFocus=0;S.setY=0;
+  S.pslide='l';clearTimeout(pslideT);pslideT=setTimeout(()=>{S.pslide='';draw();},300);
+  log('Settings');draw();
+}
+function closeSettings(){
+  S.mode=S.panelFrom;S.page=S.panelPage;
+  S.pslide='r';clearTimeout(pslideT);pslideT=setTimeout(()=>{S.pslide='';draw();},300);
+  log('Settings closed');draw();
+}
+function syncNow(){
+  if(!S.online){log('Sync now — campus Wi-Fi unavailable');if(S.mode==='panel')closePanel();S.toast=T[S.ui].pOffline;S.toastT=3;draw();return;}
+  S.mode='syncing';S.phaseT=0;log('Sync now — Wi-Fi on');draw();
+}
+function panelAction(q){
+  if(q==='sync')syncNow();
+  else if(q==='lang'){S.ui=S.ui==='zh'?'en':'zh';draw();}
+  else if(q==='all')openSettings();
+}
+function activateSetting(id){
+  if(id==='sync')syncNow();
+  else if(id==='lang'){S.ui=S.ui==='zh'?'en':'zh';draw();}
+  else if(id==='bright'){S.mode='bright';log('Brightness');draw();}
+  else if(id==='sleep'){S.autoSleep=SLEEP_OPTS[(SLEEP_OPTS.indexOf(S.autoSleep)+1)%SLEEP_OPTS.length];log('Auto-sleep '+T.en.sSleepV[S.autoSleep]);draw();}
+  else draw();
+}
+/* ---- continuous list scrolling (device px): drag follows the finger, flick glides, edges spring back ---- */
+const ROW_H=56, VIEW_H=208;
+const setMax=()=>Math.max(0,settingsRows(S).length*ROW_H-VIEW_H+8);
+let scrollRAF=null;
+function paintScroll(){const el=$('live').querySelector('.svi');if(el)el.style.transform='translateY('+(-S.setY).toFixed(1)+'px)';}
+function stopScroll(){cancelAnimationFrame(scrollRAF);scrollRAF=null;}
+/* rubber band: past an edge, the list moves at 35% of the finger */
+function rubber(y){const m=setMax();return y<0?y*0.35:y>m?m+(y-m)*0.35:y;}
+function glide(v){                       /* v in device px per ms; positive = content moves up */
+  stopScroll();let last=performance.now();
+  const step=now=>{
+    const dt=Math.min(32,now-last);last=now;const m=setMax();
+    if(S.setY<0||S.setY>m){               /* spring back to the edge */
+      const tgt=S.setY<0?0:m;S.setY+= (tgt-S.setY)*Math.min(1,dt/80);v=0;
+      if(Math.abs(tgt-S.setY)<0.5){S.setY=tgt;paintScroll();scrollRAF=null;draw();return;}
+    }else{
+      S.setY+=v*dt;v*=Math.pow(0.94,dt/16);
+      if(S.setY<0||S.setY>m)v*=0.5;
+      if(Math.abs(v)<0.01&&S.setY>=0&&S.setY<=m){paintScroll();scrollRAF=null;draw();return;}
+    }
+    paintScroll();scrollRAF=requestAnimationFrame(step);
+  };
+  scrollRAF=requestAnimationFrame(step);
+}
+function scrollTo(y){                    /* smooth scroll (keys) */
+  stopScroll();const from=S.setY,to=Math.max(0,Math.min(setMax(),y)),t0=performance.now();
+  const step=now=>{const p=Math.min(1,(now-t0)/200),e=1-Math.pow(1-p,3);S.setY=from+(to-from)*e;paintScroll();
+    if(p<1)scrollRAF=requestAnimationFrame(step);else{scrollRAF=null;draw();}};
+  scrollRAF=requestAnimationFrame(step);
+}
+function setFocusTo(i){
+  const n=settingsRows(S).length;S.setFocus=(i+n)%n;draw();
+  const top=S.setFocus*ROW_H;
+  if(top<S.setY)scrollTo(top);
+  else if(top+ROW_H>S.setY+VIEW_H)scrollTo(top+ROW_H-VIEW_H);
+}
+
 function tick(){
+  /* auto-sleep after the chosen idle time on resting screens */
+  if(['list','page','lock','panel','settings','bright'].includes(S.mode)&&S.autoSleep&&!S.confirm&&++S.idle>=S.autoSleep){S.idle=0;goSleep('Auto-sleep ('+T.en.sSleepV[S.autoSleep]+' idle)');return;}
   if(S.mode==='lock'){if(++S.lockT>=(LOCK.interval_s||6)){S.lockT=0;S.lockIdx++;}}
   else if(S.mode==='recording'){S.elapsed++;}
   else if(S.mode==='saved'){
@@ -750,7 +937,8 @@ function toLock(why){S.mode='lock';S.lockT=0;S.confirm=false;S.focus=0;log(why+'
 function backToSleep(){if(S.fromSleep){S.fromSleep=false;S.mode='sleep';log('Back to sleep');}}
 /* where a hold of this button would go right now (null = hold does nothing) */
 function holdTarget(btn){
-  if(btn==='next')return (S.mode==='list'||S.mode==='lock'||S.mode==='page')?'sleep':null;
+  if(btn==='next')return ['list','lock','page','panel','settings','bright'].includes(S.mode)?'sleep':null;
+  if(S.mode==='panel'||S.mode==='settings'||S.mode==='bright')return 'back';
   if(S.mode==='page')return 'lock';
   if(S.mode==='list')return S.confirm?'back':'lock';
   if(S.mode==='lock')return 'sleep';
@@ -758,7 +946,7 @@ function holdTarget(btn){
 }
 function doHold(btn){
   const t=holdTarget(btn);
-  if(t==='back')closePicker('Hold OK');
+  if(t==='back'){if(S.mode==='panel')closePanel();else if(S.mode==='settings')closeSettings();else if(S.mode==='bright'){S.mode='settings';draw();}else closePicker('Hold OK');}
   else if(t==='lock')toLock('Hold OK');
   else if(t==='sleep')goSleep(btn==='ok'?'Hold OK':'Hold NEXT');
 }
@@ -776,6 +964,8 @@ function wireButton(el,btn,press){
   el.addEventListener('click',e=>{if(e.detail===0)press();}); /* keyboard Enter/Space */
 }
 wireButton($('bOk'),'ok',ok);
+/* any button or touch counts as activity for auto-sleep */
+['bPlus','bNext','bOk','live'].forEach(id=>$(id).addEventListener('pointerdown',()=>{S.idle=0;}));
 wireButton($('bNext'),'next',()=>{
   if(S.mode==='sleep'){S.mode='lock';S.lockT=0;log('NEXT → wake to lock screen');draw();return;}
   next();
@@ -837,20 +1027,50 @@ function toPage(i,dir){
   log('Page → '+['Today','Claude','MD'][i]);draw();
 }
 let sw=null, swallowClick=false;
+/* finger left the screen mid-drag: finish the scroll so it never sticks past an edge */
+$('live').addEventListener('pointerleave',()=>{if(sw&&sw.kind==='settings'&&sw.moved){glide(0);sw=null;}});
+$('live').addEventListener('pointermove',e=>{
+  if(!sw)return;
+  if(sw.kind==='slider'){setBrightFromX(e.clientX);return;}
+  if(sw.kind==='settings'){
+    const k=$('live').getBoundingClientRect().width/240, dy=(e.clientY-sw.y)/k, dx=(e.clientX-sw.x)/k;
+    if(!sw.moved&&Math.abs(dy)<6)return;            /* still a tap */
+    if(!sw.moved&&Math.abs(dx)>Math.abs(dy))return;  /* horizontal: maybe swipe-back */
+    sw.moved=true;
+    const now=performance.now(),dt=Math.max(1,now-sw.lt);
+    sw.v=0.8*(-(e.clientY-sw.ly)/k/dt)+0.2*sw.v;sw.ly=e.clientY;sw.lt=now;
+    S.setY=rubber(sw.y0-dy);paintScroll();
+  }
+});
 $('live').addEventListener('pointerdown',e=>{
   sw=null;
+  const rc=$('live').getBoundingClientRect(), top=(e.clientY-rc.top)/(rc.width/240)<32; /* top edge = header band */
   if(S.mode==='lock')sw={x:e.clientX,y:e.clientY,kind:'lock'};
-  else if(S.mode==='page')sw={x:e.clientX,y:e.clientY,kind:'page'};
+  else if((S.mode==='panel'||S.mode==='bright')&&e.target.closest('[data-slider]')){sw={x:e.clientX,y:e.clientY,kind:'slider'};setBrightFromX(e.clientX);}
+  else if(S.mode==='panel')sw={x:e.clientX,y:e.clientY,kind:'panel'};
+  else if(S.mode==='bright')sw={x:e.clientX,y:e.clientY,kind:'brightbg'};
+  else if(S.mode==='settings'){stopScroll();sw={x:e.clientX,y:e.clientY,kind:'settings',y0:S.setY,ly:e.clientY,lt:performance.now(),v:0,moved:false};}
+  else if(S.mode==='page')sw={x:e.clientX,y:e.clientY,kind:'page',top};
   else if(S.mode==='list'){
     if(S.confirm){if(e.target.closest('.cf'))sw={x:e.clientX,y:e.clientY,kind:'strip'};}
-    else sw={x:e.clientX,y:e.clientY,kind:e.target.closest('.strip')?'strip':'page'};
+    else sw={x:e.clientX,y:e.clientY,kind:e.target.closest('.strip')?'strip':'page',top};
   }
 });
 $('live').addEventListener('pointerup',e=>{
   if(!sw)return;
   /* distances in DEVICE pixels, so the 2× and actual-size previews behave the same */
   const k=$('live').getBoundingClientRect().width/240;
-  const dx=(e.clientX-sw.x)/k, dy=(e.clientY-sw.y)/k, kind=sw.kind; sw=null;
+  const sw0=sw, dx=(e.clientX-sw.x)/k, dy=(e.clientY-sw.y)/k, kind=sw.kind, fromTop=sw.top; sw=null;
+  const vert=Math.abs(dy)>Math.abs(dx), eat=()=>{swallowClick=true;setTimeout(()=>swallowClick=false,0);};
+  if(kind==='slider'){eat();setBrightFromX(e.clientX);log('Brightness '+S.bright*5+'%');return;}
+  if(kind==='brightbg'){if(!vert&&dx>=40){eat();S.mode='settings';draw();}return;}
+  if(kind==='panel'){if(vert&&dy<=-30){eat();closePanel();}return;}
+  if(kind==='settings'){
+    if(sw0.moved){eat();glide(performance.now()-sw0.lt>80?0:sw0.v);}   /* released after a pause → no fling */
+    else if(!vert&&dx>=40){eat();closeSettings();}                     /* swipe right = back */
+    return;
+  }
+  if(fromTop&&vert&&dy>=30){eat();openPanel();return;}
   if(kind==='lock'){
     /* lock screen: only deliberate swipes count (pocket safety); taps stay ignored */
     if(Math.abs(dx)>=24&&Math.abs(dx)>Math.abs(dy)){swallowClick=true;setTimeout(()=>swallowClick=false,0);lockNote(dx<0?'l':'r');}
@@ -887,6 +1107,14 @@ $('live').addEventListener('pointerup',e=>{
 })();
 $('live').addEventListener('click',e=>{
   if(swallowClick){swallowClick=false;return;}
+  if(S.mode==='panel'){const q=e.target.closest('[data-q]');if(q)panelAction(q.dataset.q);return;}
+  if(S.mode==='bright'){if(e.target.closest('[data-q="back"]')){S.mode='settings';draw();}return;}
+  if(S.mode==='settings'){
+    if(e.target.closest('[data-q="back"]')){closeSettings();return;}
+    const r=e.target.closest('[data-r]');
+    if(r){S.setFocus=settingsRows(S).findIndex(x=>x.id===r.dataset.r);activateSetting(r.dataset.r);}
+    return;
+  }
   if(S.mode!=='list')return;
   if(S.confirm){
     const a=e.target.closest('[data-a]');
@@ -915,6 +1143,10 @@ function renderGallery(){
   g=base();g.mode='lock';g.lockIdx=enNote;G.push(['Lock screen','Shows notes chosen on the computer. Touch is ignored.',g]);
   g=base();g.mode='page';g.page=1;G.push(['Claude usage','Swipe left on Today. Shows the 5-hour and weekly limits with reset countdowns. Orange from 80%, red from 95%.',g]);
   g=base();g.mode='page';g.page=2;G.push(['MD simulations','Placeholder page for now.',g]);
+  g=base();g.mode='panel';G.push(['Quick panel','Swipe down from the top edge of Today or a page. Swipe up or press OK to close.',g]);
+  g=base();g.mode='settings';G.push(['Settings','From the quick panel. Swipe to scroll, tap to change. NEXT and OK work too; hold OK goes back.',g]);
+  g=base();g.mode='bright';G.push(['Brightness','20 levels in 5% steps. The whole bar is the touch target; NEXT adds 5%, OK finishes.',g]);
+  g=base();g.mode='settings';g.setY=224;g.setFocus=4;G.push(['Settings (scrolled)','Storage, battery, clock and firmware are read-only.',g]);
   g=base();G.push(['Today','Highlight on the first task. Carried-over tasks are labelled.',g]);
   g=base();g.tasks[0].done=true;g.changes=1;g.online=false;G.push(['Checked off offline','The list updates right away and the change waits for the next sync.',g]);
   g=base();g.focus=3;g.rot=1;g.confirm=true;G.push(['Browsing in Move to Today?','NEXT or a swipe shows the next task. OK moves it. Holding OK goes back.',g]);
@@ -932,6 +1164,8 @@ function renderGallery(){
   $('gallery').innerHTML=G.map(cell).join('');
 
   const Z=[];
+  g=base('zh','zh');g.mode='panel';Z.push(['快捷面板 · Quick panel','Chinese labels.',g]);
+  g=base('zh','zh');g.mode='settings';Z.push(['设置 · Settings','Chinese labels.',g]);
   g=base('zh','zh');g.mode='page';g.page=1;Z.push(['Claude 用量 · Claude usage','Chinese labels: 5 小时 / 本周.',g]);
   g=base('zh','zh');g.mode='lock';g.lockIdx=zhNote;Z.push(['锁屏 · Lock screen','15px Han text, 1.55 line height, up to 5 lines.',g]);
   g=base('zh','zh');Z.push(['今天 · Today','14px task titles. Labels at 11px with no uppercase tracking.',g]);
