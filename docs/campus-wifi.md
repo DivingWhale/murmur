@@ -63,7 +63,9 @@ Rules:
 - **Always validate the server**, with both the CA and the server name. Skipping validation lets anyone with a fake access point collect the owner's university password.
 - **Cold-start time recovery.** A fully dated, successful login stores the exact SHA-256 leaf fingerprint and the date it was checked in NVS. With the clock unset, the supplicant can establish a time-only session using that exact pin, the configured CA chain, DNS name, and the remembered date. Present-day expiry is unknown during this step. A changed certificate or missing pin requires trusted time from the owner. On receiving SNTP time, the handheld disconnects and repeats PEAP with full current-date checks before exposing the connection to normal application traffic.
 - **The development unit splits the profile across two media.** The internal NVS holds a random 256-bit key. The TF card holds an AES-GCM encrypted and authenticated copy of the campus username and password. This development setup uses no eFuse. Someone with both the card and an image of internal flash can recover the credentials.
-- **Connect only after a recording or on wake, then turn Wi-Fi off** (`docs/product-design.md`). An enterprise login takes a few seconds, so allow up to about 15 s before treating it as a failure.
+- **Connect only after a recording or on wake, then turn Wi-Fi off** (`docs/product-design.md`). An enterprise login takes a few seconds, so allow up to about 15 s before treating it as a failure. The firmware gives up joining after 30 s.
+  - *Automatic sessions* start at boot, after a recording is saved, from Settings → Wi-Fi, and on wake. Wake only connects if the clock is unset or the last session was more than 30 minutes ago. The radio switches off 2 s after network time arrives, or 20 s after DHCP, whichever comes first. The Pi upload will run inside this window once it exists.
+  - *Manual sessions* (`wifi join`, `wifi save`, `wifi connect` over USB) stay up until `wifi off`, for at most 5 minutes, so the helper can probe the Pi.
 
 ## Getting credentials onto the device
 

@@ -31,6 +31,14 @@ unsigned cardAttempts=0;
 unsigned networkRetries=0;
 bool usingSavedLogin=false;
 uint32_t retryAt=0;
+// Session lifetime. Automatic sessions (boot, wake, after a recording, Settings)
+// switch the radio off once network time arrives or after a short cap. Manual
+// sessions from the USB helper stay up until `wifi off`, with a longer cap.
+constexpr uint32_t autoOnlineLimit=20000, autoAfterTime=2000, manualOnlineLimit=300000;
+constexpr uint32_t wakeInterval=30*60000;
+bool manualSession=false, everOnline=false;
+uint32_t onlineAt=0;
+std::atomic<uint32_t> sessionTimeAt{0};
 bool readPeer(CampusPeer &peer) {
     Preferences p;
     return p.begin("campus",true) && p.getBytesLength("peer")==sizeof(peer) &&
@@ -139,7 +147,7 @@ extern "C" bool __wrap_eap_sm_allowMethod(void *sm,int vendor,int method) {
 
 bool campusOnline() { return state==State::Online; }
 uint32_t campusNetworkTime() { return lastNetworkTime.load(); }
-void startSavedCampusWifi() {
+void resumeSavedCampusWifi() {
     if (campusOnline() || state==State::ClockOnly || state==State::Joining || !hasCampusProfile()) return;
     if (millis()<5500) {retryAt=5500;state=State::Deferred;return;}
     saveFailed=false;
@@ -155,9 +163,9 @@ void startSavedCampusWifi() {
 bool serviceCampusWifi() {
     if ((state==State::Deferred && int32_t(millis()-retryAt)>=0) ||
         (state==State::MissingCard && cardAttempts<4 && int32_t(millis()-retryAt)>=0)) {
-        startSavedCampusWifi(); return true;
+        resumeSavedCampusWifi(); return true;
     }
-    if (state==State::WaitingClock && time(nullptr)>=1704067200) { startSavedCampusWifi(); return true; }
+    if (state==State::WaitingClock && time(nullptr)>=1704067200) { resumeSavedCampusWifi(); return true; }
     if (state==State::Joining) {
         if (WiFi.status()==WL_CONNECTED && uint32_t(WiFi.localIP())) {
             portENTER_CRITICAL(&peerLock);
@@ -168,10 +176,11 @@ bool serviceCampusWifi() {
             }
             state=bootstrap?State::ClockOnly:State::Online;
             networkRetries=0;
-            if (!bootstrap) rememberVerifiedPeer();
-            started=millis(); clockUpdated.store(false);
+            if (!bootstrap) { rememberVerifiedPeer(); everOnline=true; }
+            started=onlineAt=millis(); clockUpdated.store(false); sessionTimeAt.store(0);
             sntp_set_time_sync_notification_cb([](timeval *t){
                 lastNetworkTime.store(t->tv_sec);
+                sessionTimeAt.store(millis()|1);
                 clockUpdated.store(true);
             });
             configTzTime("CST-8","ntp.aliyun.com","time.cloudflare.com","cn.pool.ntp.org");
@@ -200,8 +209,12 @@ bool serviceCampusWifi() {
             return true;
         }
         if (millis()-started>60000 || WiFi.status()!=WL_CONNECTED) {stopRadio(State::WaitingClock); return true;}
-    } else if (state==State::Online && WiFi.status()!=WL_CONNECTED) {
-        stopRadio(State::Off); return true;
+    } else if (state==State::Online) {
+        const uint32_t now=millis(), synced=sessionTimeAt.load();
+        const bool done=WiFi.status()!=WL_CONNECTED ||
+            (manualSession ? now-onlineAt>=manualOnlineLimit
+                           : (synced && now-synced>=autoAfterTime) || now-onlineAt>=autoOnlineLimit);
+        if (done) { stopRadio(State::Off); return true; }
     }
     return clockUpdated.exchange(false);
 }
@@ -214,7 +227,7 @@ void campusCommand(char *cmd,Print &out) {
         char *user=cmd+5,*pass=strchr(user,'\t');
         if (!pass) {out.println("wifi error input"); return;}
         *pass++=0;
-        usingSavedLogin=false; networkRetries=0;
+        usingSavedLogin=false; networkRetries=0; manualSession=true;
         savePending=false; saveFailed=false; pending.clear();
         if (!join(user,pass)) {out.println("wifi error setup or clock"); return;}
         if (cmd[0]=='s') {
@@ -223,7 +236,7 @@ void campusCommand(char *cmd,Print &out) {
         out.println("wifi joining"); return;
     }
     if (!strcmp(cmd,"profile")) { out.println(hasCampusProfile()?"wifi saved":"wifi empty"); return; }
-    if (!strcmp(cmd,"connect")) startSavedCampusWifi();
+    if (!strcmp(cmd,"connect")) startSavedCampusWifi(true);
     if (!strcmp(cmd,"forget") || !strcmp(cmd,"off")) {
         stopCampusWifi();
         if (!strcmp(cmd,"forget")) out.println(forgetCampusProfile()?"wifi forgotten":"wifi error storage");
@@ -253,7 +266,20 @@ void campusCommand(char *cmd,Print &out) {
     }
     out.println("wifi error command");
 }
+void startSavedCampusWifi(bool manual) {
+    const bool active=campusOnline() || state==State::Joining || state==State::ClockOnly;
+    if (manual) manualSession=true;
+    else if (!active) manualSession=false; // Never shorten a running manual session.
+    resumeSavedCampusWifi();
+}
+void startCampusWifiOnWake() {
+    // A login costs several seconds of radio time. Only repeat it on wake when
+    // the clock needs setting or the last session is old.
+    if (time(nullptr)<1704067200 || !everOnline || millis()-onlineAt>=wakeInterval)
+        startSavedCampusWifi(false);
+}
 void stopCampusWifi() {
+    manualSession=false;
     pending.clear();
     savePending=saveFailed=false;
     stopRadio(State::Off);
