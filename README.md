@@ -11,6 +11,7 @@ Press a button, say what you want to remember, and put the device back in your p
 | Anything | [docs/product-design.md](docs/product-design.md): what the system does and why |
 | USB serial, TF card access or post-flash mounting | [USB startup sequence and hardware regression check](docs/product-design.md#usb-access-to-the-tf-card) |
 | Handheld UI / firmware | [docs/ui-spec.md](docs/ui-spec.md): **source of truth** for screens, controls, sizes and text |
+| Build or flash the handheld preview | [firmware/README.md](firmware/README.md) |
 | Lock-screen notes (computer ↔ Pi ↔ handheld) | [docs/lockscreen-api.md](docs/lockscreen-api.md) |
 | Claude usage page (5-hour / weekly limits) | [docs/claude-usage-api.md](docs/claude-usage-api.md) |
 | Joining the campus Wi-Fi (WPA2-Enterprise, PEAP) | [docs/campus-wifi.md](docs/campus-wifi.md) |
@@ -27,7 +28,7 @@ docs/
 prototype/
   index.html            interactive UI prototype (reference only)
   api/v1/               mock API responses used by the prototype
-firmware/               (to be added) ESP32-S3 firmware
+firmware/               ESP32-S3 firmware, fonts and CLI build entry point
 ```
 
 ## Run the prototype
@@ -42,5 +43,6 @@ The prototype simulates the 240×240 screen and the three buttons (PLUS, NEXT, O
 ## Working together
 
 - Work on a branch and open a pull request. Don't push straight to `main`.
+- Keep development environments, toolchains, download caches and build products inside this checkout and covered by `.gitignore`. The handheld builder uses `work/`, `firmware/.pio/` and `firmware/build/`.
 - If a change alters the UI behaviour, update `docs/ui-spec.md` in the same PR. The spec and the code must not disagree.
 - Keep secrets out of the repo, including API keys and campus Wi-Fi credentials. They belong on the Pi or in local config files that aren't committed.

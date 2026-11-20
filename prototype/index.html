@@ -103,7 +103,9 @@ h2{font-size:18px;margin:56px 0 4px}
 .bt.low{color:var(--s-due)}
 .bt.crit{color:var(--s-rec)}
 .scr.zh .bt{font-size:14px}
-.rows{padding:0 5px}
+.rows{height:132px;overflow:auto;scrollbar-width:none;padding:0 5px;overscroll-behavior:contain;touch-action:none}
+.rows::-webkit-scrollbar{display:none}
+.remaining{cursor:pointer}
 .row{height:60px;margin-bottom:3px;border-radius:9px;padding:0 9px;display:flex;align-items:center;gap:10px;cursor:pointer}
 .row.f{background:var(--s-surface);box-shadow:inset 0 0 0 2px var(--s-focus)}
 .cb{flex:0 0 20px;height:20px;border-radius:50%;border:2px solid var(--s-dim);display:grid;place-items:center}
@@ -234,6 +236,14 @@ h2{font-size:18px;margin:56px 0 4px}
 .timer{font-family:"JetBrains Mono",monospace;font-size:56px;font-weight:600;letter-spacing:-.02em}
 .wave{display:flex;align-items:center;gap:3px;height:44px;margin-top:8px}
 .wave i{width:5px;border-radius:2px;background:var(--s-rec)}
+.recbody{position:absolute;inset:39px 8px 76px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.recbody .wave{margin:0;height:30px}
+.recbody .smalltime{font-size:34px}
+.recbody small,.recactions small{color:var(--s-muted);font-size:13px}
+.recactions{position:absolute;bottom:6px;left:8px;right:8px;display:flex;gap:8px}
+.recactions button{flex:1;height:64px;border:2px solid transparent;border-radius:9px;background:var(--s-surf,#1c1f24);color:inherit;font:inherit;display:grid;align-content:center;justify-items:center;gap:3px}
+.recactions .chosen{border-color:var(--s-focus,#ffd23f)}
+.recactions [data-rec="discard"]{color:var(--s-rec)}
 .foot{position:absolute;bottom:12px;left:0;right:0;text-align:center;font-size:13px;color:var(--s-muted)}
 .big{font-size:26px;font-weight:700;margin-top:10px}
 .small{font-size:14px;color:var(--s-muted);margin-top:4px;line-height:1.4}
@@ -260,7 +270,7 @@ h2{font-size:18px;margin:56px 0 4px}
 .scr.zh .btn{font-size:19px}
 .scr.zh .strip{height:76px}
 .scr.zh .sl{margin-top:2px}
-.cnt{font-size:12px;font-weight:700;color:var(--s-bg);background:var(--s-muted);border-radius:999px;padding:0 6px;margin-left:6px;vertical-align:2px}
+.remaining{white-space:nowrap}
 
 /* Horizontal scroll for overflowing single-line text (focused task, rotating line).
    Show the start for 1 s, then scroll left continuously at 30 px/s (≈3.5 mm/s); a repeat follows after a 40px gap so it loops without reversing. Firmware: LVGL LV_LABEL_LONG_SCROLL_CIRCULAR. */
@@ -303,11 +313,11 @@ h2{font-size:18px;margin:56px 0 4px}
         <dl class="map">
           <dt>PLUS</dt><dd>Start recording right away. Press again to stop and save. Works from any screen, pauses a sync in progress, and <b>wakes the device from sleep straight into recording</b>. After that recording is saved and synced, it goes back to sleep.</dd>
           <dt>NEXT</dt><dd>Press: move the highlight down Today, then onto the When I Have Time line (one stop), then back to the top. <b>In “Move to Today?”:</b> press to see the next When I Have Time task.  <b>Hold 0.8 s:</b> sleep straight away (screen off). <b>While asleep:</b> press to wake to the lock screen.</dd>
-          <dt>OK</dt><dd>On a Today task: check it off (or undo). On the When I Have Time line: opens “Move to Today?” for the task shown; press again to move it into Today. <b>Hold 0.8 s:</b> on Today, a page or the lock screen → <b>sleep</b> in one hold (waking shows the lock screen). Inside the picker, quick panel or settings → <b>back</b>. The screen shows which; release early to cancel.</dd>
+          <dt>OK</dt><dd>On a Today task: check it off (or undo). On the When I Have Time line: opens “Move to Today?” for the task shown; press again to move it into Today. <b>Hold for 0.8 s</b> on Today or a page to show the lock screen. Hold again on the lock screen to sleep. Inside the picker, quick panel or settings, a hold goes back. <b>Keep PWR (OK) down for 3 s</b> and release at the prompt to power off. If USB is connected, unplug it at the second prompt.</dd>
           <dt>Lock</dt><dd>Cycles through Miscellaneous notes chosen on the computer. OK unlocks, NEXT shows the next note, PLUS records. <b>Swipe left/right</b> (≥ 24 px ≈ 2.8 mm) to change notes; <b>swipe up</b> (≥ 60 px ≈ 7 mm, a quarter of the screen) to unlock. Taps are ignored, so it stays safe in a pocket.</dd>
           <dt>Panel</dt><dd><b>Swipe down from the top edge</b> of Today or a page: Wi-Fi status, Sync now, language, a big brightness bar (20 levels — tap or drag), All settings. Swipe up or OK closes it. In Settings, swipe up/down to scroll, tap a row to change it, swipe right or hold OK to go back. NEXT/OK step through rows.</dd>
-          <dt>Pages</dt><dd><b>Touch only.</b> On Today, swipe left/right (anywhere except the bottom line) for Today → Claude usage → MD simulations. On a page, OK or NEXT returns to Today; hold OK or NEXT = sleep, PLUS records.</dd>
-          <dt>Touch</dt><dd>Tap a task to check it off. <b>Swipe left/right on the bottom line</b> to browse When I Have Time (the rotation stops; it resumes after 10 s idle). Tapping the bottom line opens “Move to Today?” with large Move and Cancel buttons. It cancels by itself after 8 s, so a stray touch never moves anything.</dd>
+          <dt>Pages</dt><dd><b>Touch only.</b> On Today, swipe left/right (anywhere except the bottom line) for Today → Claude usage → MD simulations. On a page, OK or NEXT returns to Today. Hold OK to lock or NEXT to sleep. PLUS records.</dd>
+          <dt>Touch</dt><dd>Drag up or down in the task list to scroll. Tap a task to check it off. <b>Swipe left/right on the bottom line</b> to browse When I Have Time (the rotation stops; it resumes after 10 s idle). Tapping the bottom line opens “Move to Today?” with large Move and Cancel buttons. It cancels by itself after 8 s, so a stray touch never moves anything.</dd>
         </dl>
       </div>
       <div>
@@ -557,27 +567,31 @@ function screen(s){
     }
     return wrap();
   }
-  if(s.mode==='sleep'){
+  if(s.mode==='releasePower'||s.mode==='unplugPower'){
+    const release=s.mode==='releasePower';
+    const text=s.ui==='zh'?(release?'松开关机':'拔下 USB 后关机'):(release?'Release to power off':'Unplug USB to power off');
+    h.push('<div class="soon"><b>'+text+'</b></div>');return wrap();
+  }
+  if(s.mode==='sleep'||s.mode==='off'){
     /* backlight off: nothing drawn */
     return '<div class="scr" style="background:#000"></div>';
   }
   if(s.mode==='list'){
-    const n=s.tasks.length, pend=s.pending+s.changes;
+    const visible=visibleTasks(s),n=visible.length, pend=s.pending+s.changes;
     /* compact sync status (icon + count) to leave room for the battery */
     let st;
     if(pend>0) st=s.online?'<span class="st sync" title="'+esc(L.waiting(pend))+'">'+I.sync+pend+'</span>':'<span class="st" title="'+esc(L.waiting(pend))+'">'+I.off+pend+'</span>';
     else st='<span class="st" title="'+esc(L.synced)+'">'+I.done+'</span>';
     st='<span class="hr">'+st+battery(s)+'</span>';
-    const open=s.tasks.filter(t=>!t.done).length;
-    h.push('<div class="hd"><div><span class="t">'+L.today+'</span>'+(n>2&&open?'<span class="cnt">'+open+'</span>':'')+'<span class="d">'+esc(L.day(s.day))+'</span></div>'+st+'</div>');
+    const caption=s.completedView?(s.ui==='zh'?'已完成：':'Done: '):(s.ui==='zh'?'剩余数：':'Left: ');
+    h.push('<div class="hd"><div><span class="t remaining" data-filter>'+caption+n+'</span><span class="d">'+esc(L.day(s.day))+'</span></div>'+st+'</div>');
     if(n===0){
-      h.push('<div class="empty"><div><b>'+L.clear+'</b>'+L.clearSub+'</div></div>');
+      h.push('<div class="empty"><div><b>'+(s.completedView?(s.ui==='zh'?'暂无已完成任务':'No completed tasks'):L.clear)+'</b></div></div>');
     }else{
       const f=Math.min(s.focus,n);
-      const start=Math.max(0,Math.min(f,n-1)-1);
       h.push('<div class="rows">');
-      s.tasks.slice(start,start+2).forEach((t,i)=>{
-        const idx=start+i, m=meta(t,s);
+      visible.forEach((t,idx)=>{
+        const m=meta(t,s);
         h.push('<div class="row'+(f===idx?' f':'')+(t.done?' done':'')+'" data-i="'+idx+'"><span class="cb">'+(t.done?I.check:'')+'</span><div class="tx"><div class="ti'+cj(t.title)+(f===idx&&!t.done?' mq':'')+'"><span>'+esc(t.title)+'</span></div>'+(m?'<div class="me'+cj(metaText(t,s))+'">'+m+'</div>':'')+'</div></div>');
       });
       h.push('</div>');
@@ -623,8 +637,16 @@ function screen(s){
     const t=s.elapsed, mm=Math.floor(t/60), ss=String(t%60).padStart(2,'0');
     const bars=Array.from({length:20},(_,i)=>'<i style="height:'+(5+Math.abs(Math.sin((i+1)*1.7+t*2.3))*30).toFixed(0)+'px"></i>').join('');
     h.push('<div class="rech'+(t%2?' blink':'')+'"><span class="r"><span class="rdot"></span>'+L.rec+'</span>'+(s.batt<=20&&!s.charging?battery(s):'<span style="color:var(--s-muted)">'+esc(L.day(s.day))+'</span>')+'</div>');
-    h.push('<div class="full"><div class="timer">'+mm+':'+ss+'</div><div class="wave">'+bars+'</div></div>');
-    h.push('<div class="foot">'+(s.recPausedSync?L.syncPaused:'')+L.stop+'</div>');
+    const zh=s.ui==='zh',confirm=s.askDiscard;
+    const button=(id,text,hint,selected)=>'<button data-rec="'+id+'" class="'+(selected?'chosen':'')+'">'+text+(hint?'<small>'+hint+'</small>':'')+'</button>';
+    const time=mm+':'+ss;
+    if(confirm){
+      h.push('<div class="recbody"><b>'+(zh?'丢弃本次录音？':'Discard this recording?')+'</b><div class="timer smalltime">'+time+'</div><small>'+(zh?'NEXT 选择 · OK 确认':'NEXT selects · OK confirms')+'</small></div>');
+      h.push('<div class="recactions">'+button('keep',zh?'继续录音':'Keep recording','',!s.discardSelected)+button('discard',zh?'丢弃':'Discard','',s.discardSelected)+'</div>');
+    }else{
+      h.push('<div class="recbody"><div class="timer">'+time+'</div><div class="wave">'+bars+'</div></div>');
+      h.push('<div class="recactions">'+button('cancel',zh?'取消':'Cancel','NEXT')+button('save',zh?'结束并保存':'Stop &amp; save','+')+'</div>');
+    }
   }
   else if(s.mode==='saved'){
     h.push('<div class="full">'+I.savedBig+'<div class="big">'+L.saved+'</div><div class="small">'+Math.floor(s.lastLen/60)+':'+String(s.lastLen%60).padStart(2,'0')+L.sep+L.onCard+'</div></div>');
@@ -685,10 +707,16 @@ function mqFrame(now,once){
   if(!once)requestAnimationFrame(mqFrame);
 }
 requestAnimationFrame(mqFrame);
+function visibleTasks(s){return s.tasks.filter(t=>Boolean(t.done)===Boolean(s.completedView));}
+function revealTask(){const y=S.focus*63;S.taskY=Math.min(y,Math.max(S.taskY||0,y+60-132));}
 function draw(){
   $('live').style.filter=S.bright>=20?'':'brightness('+Math.max(0.12,S.bright/20).toFixed(2)+')';
   const html=screen(S);
-  if(html!==lastHtml){$('live').innerHTML=html;lastHtml=html;runMarquee();}
+  if(html!==lastHtml){
+    $('live').innerHTML=html;lastHtml=html;runMarquee();
+    const rows=$('live').querySelector('.rows');
+    if(rows){rows.scrollTop=S.taskY||0;S.taskY=rows.scrollTop;rows.onscroll=()=>{if(rows.isConnected)S.taskY=rows.scrollTop;};}
+  }
   $('log').innerHTML=S.log.map(l=>'<li>'+esc(l)+'</li>').join('');
   $('bPlus').classList.toggle('on',S.mode==='recording');
   $('sOnline').setAttribute('aria-pressed',S.online);
@@ -699,13 +727,16 @@ function draw(){
   $('ctEn').setAttribute('aria-pressed',S.content==='en');$('ctZh').setAttribute('aria-pressed',S.content==='zh');
 }
 function plus(){
+  if(['off','releasePower','unplugPower'].includes(S.mode))return;
   if(S.mode==='recording'){
+    S.askDiscard=false;
     S.lastLen=S.elapsed;S.mode='saved';S.phaseT=0;S.pending++;log('Saved to microSD ('+S.elapsed+'s)');
   }else if(S.batt<=3&&!S.charging){
     S.mode='error';S.err='batt';log('Recording refused — battery '+S.batt+'%');
   }else if(S.cardFull){
     S.mode='error';S.err='card';log('Write failed — card full');
   }else{
+    S.recordingFrom=S.mode;S.recordingFromPicker=S.confirm;S.askDiscard=false;
     S.recPausedSync=S.mode==='syncing';
     if(S.recPausedSync)log('Recording takes priority — sync paused');
     if(S.mode==='sleep'){S.fromSleep=true;log('PLUS woke the device');}
@@ -713,7 +744,23 @@ function plus(){
   }
   draw();
 }
+function recordingAction(action){
+  if(S.mode!=='recording')return;
+  if(action==='save'){plus();return;}
+  if(!S.askDiscard && action==='cancel'){S.askDiscard=true;S.discardSelected=false;}
+  else if(S.askDiscard && action==='keep')S.askDiscard=false;
+  else if(S.askDiscard && action==='discard'){
+    S.askDiscard=false;S.mode=S.recordingFrom;S.confirm=S.recordingFromPicker;S.idle=0;
+    if(S.mode==='sleep')S.fromSleep=false;
+    log('Current recording discarded');
+  }
+  draw();
+}
 function next(){
+  if(S.mode==='recording'){
+    if(S.askDiscard){S.discardSelected=!S.discardSelected;draw();}else recordingAction('cancel');
+    return;
+  }
   if(S.mode==='lock'){S.lockIdx++;S.lockT=0;draw();return;}
   if(S.mode==='page'){toPage(0,'r');return;}                /* NEXT on a page: back to Today */
   if(S.mode==='panel'){closePanel();return;}
@@ -722,11 +769,15 @@ function next(){
   if(S.mode!=='list')return;
   if(S.confirm){browse('l');return;}                       /* picker: next item */
   /* Today: short loop — each task, then the When I Have Time line as ONE stop, then back to the top */
-  S.focus=(Math.min(S.focus,S.tasks.length)+1)%(S.tasks.length+1);
+  const count=visibleTasks(S).length;
+  S.focus=(Math.min(S.focus,count)+1)%(count+1);
+  if(S.focus<count)revealTask();
   S.stripIdle=0;
   draw();
 }
 function ok(){
+  if(S.mode==='recording'&&S.askDiscard){recordingAction(S.discardSelected?'discard':'keep');return;}
+  if(S.mode==='off'){toLock('Power on');return;}
   if(S.mode==='error'){S.mode='list';draw();return;}
   if(S.mode==='lock'){S.mode='list';log('Unlocked');draw();return;}
   if(S.mode==='page'){toPage(0,'r');return;}                /* OK on a page: back to Today */
@@ -734,16 +785,16 @@ function ok(){
   if(S.mode==='settings'){activateSetting(settingsRows(S)[S.setFocus].id);return;}
   if(S.mode==='bright'){S.mode='settings';log('Brightness '+S.bright*5+'%');draw();return;}
   if(S.mode!=='list')return;
-  const n=S.tasks.length,f=Math.min(S.focus,n);
+  const visible=visibleTasks(S),n=visible.length,f=Math.min(S.focus,n);
   if(f<n){
-    const t=S.tasks[f];t.done=!t.done;S.changes++;
+    const t=visible[f];t.done=!t.done;S.changes++;S.focus=Math.min(f,Math.max(0,n-2));
     log((t.done?'Checked off':'Unchecked')+' “'+t.title+'” — queued for Pi');
   }else if(S.someday.length){
     const r=S.rot%S.someday.length;
     if(!S.confirm){S.confirm=true;S.confirmT=0;}
     else{
       const t=S.someday.splice(r,1)[0];S.tasks.push({id:t.id,title:t.title,due:t.due});
-      S.confirm=false;S.rot=S.someday.length?r%S.someday.length:0;S.focus=S.tasks.length-1;S.changes++;
+      S.confirm=false;S.rot=S.someday.length?r%S.someday.length:0;S.completedView=false;S.focus=visibleTasks(S).length-1;revealTask();S.changes++;
       log('Moved “'+t.title+'” into Today'+(t.due!=null?' (still due '+DOW_EN[t.due%7]+')':''));
     }
   }
@@ -884,8 +935,9 @@ function tick(){
   }else if(S.mode==='list'){
     if(S.toastT>0)S.toastT--;
     if(S.confirm&&++S.confirmT>=8){S.confirm=false;log('No answer — move cancelled');}
-    if(!S.confirm&&S.tasks.length>0&&Math.min(S.focus,S.tasks.length)===S.tasks.length&&++S.stripIdle>=10){S.focus=0;S.stripIdle=0;log('Idle 10 s — rotation resumes');}
-    const onStrip=Math.min(S.focus,S.tasks.length)===S.tasks.length;
+    const count=visibleTasks(S).length;
+    if(!S.confirm&&count>0&&S.focus>=count&&++S.stripIdle>=10){S.focus=0;S.stripIdle=0;log('Idle 10 s — rotation resumes');}
+    const onStrip=S.focus>=count;
     /* rotate every 3 s, or after one full scroll of a long title */
     if(!S.confirm&&!onStrip&&S.someday.length>1&&++S.rotT>=Math.max(3,Math.ceil(stripDur))){S.rotT=0;S.rot=(S.rot+1)%S.someday.length;}
   }
@@ -939,9 +991,9 @@ function backToSleep(){if(S.fromSleep){S.fromSleep=false;S.mode='sleep';log('Bac
 function holdTarget(btn){
   if(btn==='next')return ['list','lock','page','panel','settings','bright'].includes(S.mode)?'sleep':null;
   if(S.mode==='panel'||S.mode==='settings'||S.mode==='bright')return 'back';
-  /* top level (Today, pages, lock): one hold = sleep; waking always shows the lock screen */
-  if(S.mode==='list')return S.confirm?'back':'sleep';
-  if(S.mode==='page'||S.mode==='lock')return 'sleep';
+  if(S.mode==='list')return S.confirm?'back':'lock';
+  if(S.mode==='page')return 'lock';
+  if(S.mode==='lock')return 'sleep';
   return null;
 }
 function doHold(btn){
@@ -951,15 +1003,32 @@ function doHold(btn){
   else if(t==='sleep')goSleep(btn==='ok'?'Hold OK':'Hold NEXT');
 }
 function wireButton(el,btn,press){
-  el.addEventListener('pointerdown',()=>{
+  let powerTimer;
+  el.addEventListener('pointerdown',e=>{
+    if(!e.isPrimary)return;
+    el.setPointerCapture(e.pointerId);
     held=false;
+    if(btn==='ok'&&!['off','unplugPower','releasePower'].includes(S.mode)){
+      powerTimer=setTimeout(()=>{
+        held=true;
+        if(S.mode==='recording')plus();
+        S.mode='releasePower';S.confirm=false;showHold(null);draw();
+      },3000);
+    }
     const t=holdTarget(btn);
     if(!t)return;
     holdShowTimer=setTimeout(()=>showHold(t),HOLD_MS-550);
     holdTimer=setTimeout(()=>{held=true;showHold(null);doHold(btn);},HOLD_MS);
   });
-  el.addEventListener('pointerup',()=>{cancelHold();if(held){held=false;return;}press();});
-  el.addEventListener('pointerleave',()=>{if(!held)cancelHold();});
+  el.addEventListener('pointerup',e=>{
+    if(!e.isPrimary)return;
+    clearTimeout(powerTimer);cancelHold();
+    if(btn==='ok'&&S.mode==='releasePower'){S.mode=S.charging?'unplugPower':'off';draw();return;}
+    if(held){held=false;return;}press();
+  });
+  el.addEventListener('pointercancel',()=>{
+    clearTimeout(powerTimer);cancelHold();if(S.mode==='releasePower')toLock('Power off cancelled');
+  });
   el.addEventListener('contextmenu',e=>e.preventDefault()); /* long-press on touch devices */
   el.addEventListener('click',e=>{if(e.detail===0)press();}); /* keyboard Enter/Space */
 }
@@ -972,7 +1041,7 @@ wireButton($('bNext'),'next',()=>{
 });
 $('sOnline').onclick=()=>{S.online=!S.online;log('Campus Wi-Fi '+(S.online?'available':'unavailable'));draw();};
 $('sFull').onclick=()=>{S.cardFull=!S.cardFull;draw();};
-const setBatt=(p,chg)=>{S.batt=p;S.charging=chg;log(chg?'Charging ('+p+'%)':'Battery '+p+'%');draw();};
+const setBatt=(p,chg)=>{S.batt=p;S.charging=chg;if(!chg&&S.mode==='unplugPower')S.mode='off';log(chg?'Charging ('+p+'%)':'Battery '+p+'%');draw();};
 $('b78').onclick=()=>setBatt(78,false);$('b15').onclick=()=>setBatt(15,false);
 $('b3').onclick=()=>setBatt(3,false);$('bChg').onclick=()=>setBatt(S.batt,true);
 $('sWake').onclick=wake;$('sDay').onclick=nextDay;
@@ -993,10 +1062,10 @@ function browse(dir){
   if(k>1){S.rot=(S.rot+(dir==='l'?1:-1)+k)%k;S.slide=dir;clearSlide();}
   S.confirmT=0;draw();
 }
-function closePicker(why){S.confirm=false;S.focus=S.tasks.length;S.stripIdle=0;log(why+' — move cancelled');draw();}
+function closePicker(why){S.confirm=false;S.focus=visibleTasks(S).length;S.stripIdle=0;log(why+' — move cancelled');draw();}
 function clearSlide(){clearTimeout(slideT);slideT=setTimeout(()=>{S.slide='';draw();},320);}
 function swipe(dir){
-  const n=S.tasks.length, k=S.someday.length;
+  const n=visibleTasks(S).length, k=S.someday.length;
   if(S.mode!=='list'||!k)return;
   if(S.confirm){browse(dir);return;}
   if(Math.min(S.focus,n)!==n)S.focus=n;
@@ -1043,8 +1112,9 @@ $('live').addEventListener('pointermove',e=>{
   }
 });
 $('live').addEventListener('pointerdown',e=>{
-  sw=null;
-  const rc=$('live').getBoundingClientRect(), top=(e.clientY-rc.top)/(rc.width/240)<32; /* top edge = header band */
+  sw=null;swallowClick=false;
+  const rc=$('live').getBoundingClientRect(), y=(e.clientY-rc.top)*240/rc.width;
+  const top=y<32; /* Pull down from the header to open the quick panel. */
   if(S.mode==='lock')sw={x:e.clientX,y:e.clientY,kind:'lock'};
   else if((S.mode==='panel'||S.mode==='bright')&&e.target.closest('[data-slider]')){sw={x:e.clientX,y:e.clientY,kind:'slider'};setBrightFromX(e.clientX);}
   else if(S.mode==='panel')sw={x:e.clientX,y:e.clientY,kind:'panel'};
@@ -1053,11 +1123,32 @@ $('live').addEventListener('pointerdown',e=>{
   else if(S.mode==='page')sw={x:e.clientX,y:e.clientY,kind:'page',top};
   else if(S.mode==='list'){
     if(S.confirm){if(e.target.closest('.cf'))sw={x:e.clientX,y:e.clientY,kind:'strip'};}
-    else sw={x:e.clientX,y:e.clientY,kind:e.target.closest('.strip')?'strip':'page',top};
+    else {
+      const kind=e.target.closest('.strip')?'strip':(y>=32&&y<164?'tasks':'page');
+      sw={x:e.clientX,y:e.clientY,kind,top,scrollY:S.taskY||0};
+      sw.taskIndex=e.target.closest('[data-i]')?.dataset.i;
+    }
   }
 });
+function dragTasks(e){
+  if(!sw||sw.kind!=='tasks'||S.mode!=='list'||S.confirm)return false;
+  const scale=$('live').getBoundingClientRect().width/240;
+  const dx=Math.abs(e.clientX-sw.x)/scale, dy=(e.clientY-sw.y)/scale;
+  if(!sw.scrolling){
+    if(dx>12&&dx>Math.abs(dy)){sw.kind='page';return false;}
+    if(Math.abs(dy)<=12||Math.abs(dy)<=dx)return false;
+    sw.scrolling=true;
+    if(e.type==='pointermove')$('live').setPointerCapture(e.pointerId);
+  }
+  const rows=$('live').querySelector('.rows');
+  if(rows){rows.scrollTop=sw.scrollY-dy;S.taskY=rows.scrollTop;S.stripIdle=0;}
+  return true;
+}
+$('live').addEventListener('pointermove',dragTasks);
+$('live').addEventListener('pointercancel',()=>{sw=null;});
 $('live').addEventListener('pointerup',e=>{
   if(!sw)return;
+  if(dragTasks(e)){sw=null;swallowClick=true;return;}
   /* distances in DEVICE pixels, so the 2× and actual-size previews behave the same */
   const k=$('live').getBoundingClientRect().width/240;
   const sw0=sw, dx=(e.clientX-sw.x)/k, dy=(e.clientY-sw.y)/k, kind=sw.kind, fromTop=sw.top; sw=null;
@@ -1071,6 +1162,9 @@ $('live').addEventListener('pointerup',e=>{
     return;
   }
   if(fromTop&&vert&&dy>=30){eat();openPanel();return;}
+  if(kind==='tasks'&&sw0.taskIndex!==undefined&&e.pointerType==='touch'&&Math.abs(dx)<=12&&Math.abs(dy)<=12){
+    S.focus=Number(sw0.taskIndex);swallowClick=true;ok();return;
+  }
   if(kind==='lock'){
     /* lock screen: only deliberate swipes count (pocket safety); taps stay ignored */
     if(Math.abs(dx)>=24&&Math.abs(dx)>Math.abs(dy)){swallowClick=true;setTimeout(()=>swallowClick=false,0);lockNote(dx<0?'l':'r');}
@@ -1085,6 +1179,8 @@ $('live').addEventListener('pointerup',e=>{
       const ni=(S.mode==='page'?S.page:0)+(dir==='l'?1:-1);
       if(ni<0||ni>2)bounce(dir);else toPage(ni,dir);
     }
+  }else if(Math.abs(dx)>12||Math.abs(dy)>12){
+    swallowClick=true;
   }
 });
 
@@ -1107,6 +1203,7 @@ $('live').addEventListener('pointerup',e=>{
 })();
 $('live').addEventListener('click',e=>{
   if(swallowClick){swallowClick=false;return;}
+  if(S.mode==='recording'){const b=e.target.closest('[data-rec]');if(b)recordingAction(b.dataset.rec);return;}
   if(S.mode==='panel'){const q=e.target.closest('[data-q]');if(q)panelAction(q.dataset.q);return;}
   if(S.mode==='bright'){if(e.target.closest('[data-q="back"]')){S.mode='settings';draw();}return;}
   if(S.mode==='settings'){
@@ -1116,6 +1213,7 @@ $('live').addEventListener('click',e=>{
     return;
   }
   if(S.mode!=='list')return;
+  if(!S.confirm&&e.target.closest('[data-filter]')){S.completedView=!S.completedView;S.focus=0;S.taskY=0;draw();return;}
   if(S.confirm){
     const a=e.target.closest('[data-a]');
     if(a&&a.dataset.a==='move')ok();
@@ -1124,7 +1222,7 @@ $('live').addEventListener('click',e=>{
   }
   const row=e.target.closest('[data-i]');
   if(row){S.focus=+row.dataset.i;S.confirm=false;ok();return;}
-  if(e.target.closest('[data-s]')){if(Math.min(S.focus,S.tasks.length)!==S.tasks.length)S.stripEntry=S.rot%Math.max(1,S.someday.length);S.focus=S.tasks.length;ok();}
+  if(e.target.closest('[data-s]')){const n=visibleTasks(S).length;if(S.focus!==n)S.stripEntry=S.rot%Math.max(1,S.someday.length);S.focus=n;ok();}
 });
 setInterval(tick,1000);
 draw();

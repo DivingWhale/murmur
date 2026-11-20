@@ -78,15 +78,16 @@ Coordinates are from the screen's top-left corner. The prototype has an exact ex
 
 ### 4.2 Today
 - **Header (32px tall):**
-  - Left: `Today` / `今天`, then a count badge of unfinished tasks (only when there are more than 2 tasks), then the date (`Wed 18`, or the weekday only in Chinese: `周三`).
+  - Left: tap the count to switch between remaining tasks (`Left: 3` / `剩余数：3`) and completed tasks (`Done: 1` / `已完成：1`). The date follows with a 6px gap.
   - Right: sync status, then battery, 8px apart.
 - **Sync status (compact):**
   - All synced: a check icon in muted colour.
   - Waiting, online: a sync icon and a count, in sync colour.
   - Waiting, offline: a Wi-Fi-off icon and a count, in muted colour.
 - **Task list:** **2 rows visible** (60px each, 3px gap). The window scrolls so the highlighted row is always visible.
+- **Vertical drag:** the list follows the finger continuously and can rest partway through a row. The firmware scroll container supports momentum. The header and bottom line stay pinned. A drag consumes the tap even at either end.
 - **Task row:** a 20px circle checkbox, then the title, then a meta line underneath. The meta line can contain `Carried over`, a detail such as `Print shop`, and a deadline in due colour (`Due Fri`, `Due today` or `Overdue`), joined with ` · `.
-- **Finished tasks:** a filled checkbox, and the title in dim colour with a line through it.
+- **Finished tasks:** checking a task moves it immediately to the completed list. It has a filled checkbox and a dimmed, struck-through title. Tapping it there restores it to the remaining list. Both actions also work with OK on the selected task.
 - **Empty list:** `All clear` / `全部完成`, with `Press + to capture a thought` underneath.
 - **Bottom line, "When I Have Time":** pinned to the bottom, 74px tall (76px for Chinese labels), with a 1px divider above. It shows two rows:
   - **Label row:** `WHEN I HAVE TIME` / `有空再做` with position dots. When highlighted, the label changes to `PAUSED · OK TO CHOOSE` / `已暂停 · 按 OK 选择` in focus colour.
@@ -107,7 +108,8 @@ Coordinates are from the screen's top-left corner. The prototype has an exact ex
 ### 4.4 Recording
 - **Top row:** a red dot that blinks once a second, `REC` / `录音中` on the left, and the date on the right. Below 20% battery (when not charging), the battery indicator replaces the date.
 - **Middle:** the timer `m:ss`, with a live level meter of 20 bars underneath.
-- **Bottom:** `Press + to stop` / `按 + 停止`, prefixed with `Sync paused · ` if this recording interrupted a sync.
+- **Bottom:** two 108 × 64 px touch buttons. The left button reads `Cancel` / `取消` with the NEXT hint. The right button reads `Stop & save` / `结束并保存` with the PLUS hint.
+- **Discard confirmation:** a tap on Cancel or a short NEXT press opens “Discard this recording?” while capture and the elapsed timer continue. Keep recording is initially selected. NEXT toggles the selection and OK activates it. Touch either choice directly. Put Keep recording on the left so a repeated tap on Cancel keeps the audio. PLUS still finalizes and saves. Confirming Discard removes only the active temporary file, skips the Saved screen and returns to the originating screen, including Sleep.
 
 ### 4.5 Saved
 A circle with a check mark, `Saved` / `已保存`, and `0:12 · on microSD`. At the bottom: `Syncing next` (online) or `Will sync when online`. Show this screen **only after** the file write has succeeded. It stays for 2 s.
@@ -130,16 +132,17 @@ The backlight is off and nothing is drawn. Touch is ignored.
 ### 4.9 Hold overlay
 While a button is held (§5), a dark overlay (black at 72%) covers the screen, showing an icon, a label and a progress bar that fills over the last 550 ms. The destinations are:
 - **Back:** arrow icon, `Back` / `返回`.
+- **Lock:** padlock icon, `Lock` / `锁屏`.
 - **Sleep:** moon icon, `Sleep` / `休眠`.
 
 ### 4.10 Pages (touch only)
 Not every feature needs a button. Only frequent actions are on keys. Pages are reached **only by touch**:
 
-- **Navigation:** on Today, swipe left or right anywhere except the bottom line to move Today ↔ **Claude** ↔ **MD**. The bottom line keeps its own swipe for browsing tasks. Each page change slides in (0.26 s).
+- **Navigation:** Today, **Claude**, and **MD** sit next to each other in that order. A horizontal drag moves both visible pages by the same distance as the finger, with their edges touching. Reversing the drag immediately reverses both pages. Release after at least 24 px to finish the turn, or release a shorter drag to return to the starting page. The remaining movement eases out in at most 0.26 s. On Today, vertical drags scroll the task list and the bottom line keeps its own horizontal swipe for browsing tasks.
 - **Page layout:**
   - Header: the page title on the left, battery on the right (same as Today).
   - Footer (data pages only), 10px from the bottom: `Updated HH:MM` / `更新于 HH:MM`. No page dots.
-- **Edge bounce:** swiping right on Today (first page) or left on MD (last page) nudges the screen 14px toward the swipe, overshoots 4px back, then settles (0.34 s). That shows there are no more pages.
+- **Outer edges:** dragging past Today or MD moves the end page by at most 14 px. Releasing returns it to the edge.
 - **Claude page:** two blocks, 16px apart. Data comes from `docs/claude-usage-api.md`.
   - **Labels:** `5-HOUR` / `5 小时` and `WEEK` / `本周`. Label style as in §3, with the percentage right-aligned at 30px bold, using fixed-width digits.
   - **Bar:** 8px tall, rounded, with an empty track of `#2A2D33`.
@@ -147,7 +150,7 @@ Not every feature needs a button. Only frequent actions are on keys. Pages are r
   - **Colour:** the percentage and bar use text colour, due colour at ≥ 80%, and rec colour at ≥ 95%.
   - **No data:** `No usage data yet` / `暂无用量数据`.
 - **MD page:** a placeholder for now. Show an atom icon, `Coming soon` / `即将上线`, and `Simulation progress will show here.` / `模拟进度将显示在这里。`
-- **Keys on a page:** PLUS records. OK or NEXT press returns to Today. Hold OK or hold NEXT sleeps.
+- **Keys on a page:** PLUS records. OK or NEXT press returns to Today. Hold OK to lock or NEXT to sleep.
 - **Lock screen:** taps are ignored and pages can't be opened from it. Only its own swipes (notes, unlock) work.
 - **Freshness:** page data refreshes only when the device syncs. That's why every data page shows when it was last updated.
 
@@ -155,7 +158,7 @@ Not every feature needs a button. Only frequent actions are on keys. Pages are r
 - **Open:** swipe down (≥ 30 px) starting in the top 32 px (header band) of Today or a page. It slides down (0.28 s).
 - **Close:** swipe up (≥ 30 px), press OK or NEXT, or hold OK. Closing returns to the screen it was opened from.
 - **Layout** (10px padding, 8px gaps, background `#121418`):
-  1. **Status row (24px):** Wi-Fi icon (or Wi-Fi-off), network name (SSID), and `Synced 10:40` / `已同步 10:40` or `Offline` / `离线`.
+  1. **Status row (24px):** Wi-Fi icon (or Wi-Fi-off), network name (SSID), and `Synced 10:40` / `已同步 10:40` or `Offline` / `离线`. A manual Wi-Fi session with no sync result shows the SSID and `Online` / `在线` after DHCP.
   2. **Two tiles (66px each, 12px radius):**
      - **Sync now** / `立即同步`: connects, syncs and returns to Today. Offline: shows the toast `Offline`.
      - **Language** / `语言`: shows `EN` or `中` and toggles the screen-label language.
@@ -179,14 +182,14 @@ Not every feature needs a button. Only frequent actions are on keys. Pages are r
 
 | Row | Value | Action |
 |---|---|---|
-| Wi-Fi / `Wi-Fi` | SSID; sub-line `Last sync 10:40` or `Unavailable` | Status only. Credentials are set over USB (`docs/campus-wifi.md`) |
+| Wi-Fi / `Wi-Fi` | Network state and SSID | Tap or press OK to retry the saved campus login. Initial provisioning uses USB (`docs/campus-wifi.md`). |
 | Sync now / `立即同步` | sub-line: last sync time | Sync |
 | Language / `语言` | `English` / `中文` | Toggle |
 | Brightness / `亮度` | `80%` | Opens the Brightness screen |
 | Auto-sleep / `自动休眠` | `30 s` · `1 min` · `5 min` · `Never` (default 1 min) | Cycle |
 | Storage / `存储` | `12.4 GB free` (rec colour `Card full` when full) | — |
 | Battery / `电量` | `80%`, `· charging` | — |
-| Clock / `时钟` | `HH:MM`; sub-line: date | — |
+| Clock / `时钟` | Local time and date | Time synchronizes automatically after Wi-Fi login. Tap or press OK for network-time status and manual editing. NEXT increments the field. OK advances and confirms the last field. |
 | Firmware / `固件` | `Murmur 0.1.0` | — |
 
 - **Brightness screen:**
@@ -204,17 +207,19 @@ Not every feature needs a button. Only frequent actions are on keys. Pages are r
 |---|---|---|---|---|---|---|
 | Sleep | Wake **and start recording** | Wake to Lock | — | — | — | Ignored |
 | Lock | Start recording | Next note | Sleep | Unlock to Today | Sleep | Swipe left/right (≥ 24 px): next/previous note. Swipe up (≥ 60 px): unlock. Taps ignored |
-| Today | Start recording | Move highlight: task 1 → … → task n → bottom line → task 1 | Sleep | Task: check off or undo. Bottom line: open picker | Sleep | Tap a task: check it off. Tap the bottom line: open picker. Swipe the bottom line left/right: next/previous task (highlights the line and pauses rotation). **Swipe elsewhere: pages (§4.10). Swipe down from the top: quick panel (§4.11)** |
+| Today | Start recording | Move highlight: task 1 → … → task n → bottom line → task 1 | Sleep | Task: check off or undo. Bottom line: open picker | Lock | Drag up/down in the list to scroll. Tap a task to check it off. Tap the bottom line to open the picker. Swipe the bottom line left/right to browse tasks and pause rotation. Swipe left/right elsewhere for pages (§4.10). Swipe down from the header for the quick panel (§4.11). |
 | Picker | Start recording (closes picker) | Next task | — | Move the task shown into Today | Back to Today (highlight stays on the bottom line) | Swipe: next/previous. Cancel/Move buttons |
-| Recording | Stop and save | — | — | — | — | — |
+| Recording | Stop and save | Ask to discard | — | — | 3 s saves before shutdown | Cancel or Stop & save |
+| Discard confirmation | Stop and save | Toggle Keep / Discard | — | Activate selection | 3 s saves before shutdown | Tap Keep recording or Discard |
 | Saved, Syncing | Start recording (pauses the sync) | — | — | — | — | — |
 | Error | Start recording (if possible) | — | — | Dismiss | — | — |
-| Page (Claude, MD) | Start recording | Back to Today | Sleep | Back to Today | Sleep | Swipe left/right: next/previous page. Swipe down from the top: quick panel. Taps do nothing |
+| Page (Claude, MD) | Start recording | Back to Today | Sleep | Back to Today | Lock | Swipe left/right: next/previous page. Swipe down from the top: quick panel. Taps do nothing |
 | Quick panel | Start recording | Close | Sleep | Close | Close | Tap tiles / All settings; tap or drag the brightness bar; swipe up: close |
 | Settings | Start recording | Highlight next row | Sleep | Change highlighted row | Back | Tap a row; swipe up/down: scroll; swipe right: back |
 | Brightness | Start recording | +5% (wraps) | Sleep | Back to Settings | Back to Settings | Tap or drag the bar |
 
-- **What a hold of OK does:** at the top level (Today, a page, the lock screen), it **sleeps in one hold**, and waking always shows the lock screen. Inside a sub-screen (the picker, the quick panel, settings, brightness), it goes **back** one level. The hold overlay shows `Sleep` or `Back` so the user knows which before releasing.
+- Holding OK on Today or a page opens the lit lock screen. A second hold on the lock screen sleeps. Inside the picker, quick panel, settings or brightness screen, holding OK goes back one level.
+- **Power off from any screen.** Keep the physical PWR (OK) button down for 3 seconds, including through its 800 ms action. The display shows `松开关机` / `Release to power off`. An active recording must save successfully first. Release PWR to cut battery power. With USB power present the screen shows `拔下 USB 后关机` / `Unplug USB to power off` until the cable is removed.
 - **Swipe:** a horizontal movement of more than 12 device px that is larger than the vertical movement (lock screen: 24 px sideways, 60 px up). A swipe must never also count as a tap.
 - **Bottom line timeout:** if the bottom line stays highlighted for 10 s with no input, the highlight returns to task 1 and the rotation resumes.
 - **Recording from sleep:** if a recording was started from Sleep, return to Sleep once its save and sync (or the offline fallback) have finished.
@@ -251,7 +256,7 @@ Applies to task titles and the bottom-line title.
 
 - **Indicator:** an outlined battery icon with a fill level, plus the percentage, rounded to 5% steps so it doesn't flicker.
 - **Colour:** muted at ≥ 21%, due colour at 11–20%, rec colour at ≤ 10%.
-- **Charging:** a lightning bolt over the fill.
+- **Charging:** show a lightning bolt over the fill while the charger reports active charging. When that signal changes, update the visible indicator and the Battery settings row in place, even if the percentage stays the same. The same rule updates the date or low-battery warning during recording.
 - **Percentage:** map battery voltage to percent with a LiPo discharge curve, not a straight line.
 
 ## 10. Text strings
@@ -270,7 +275,7 @@ Campus Wi-Fi (WPA2-Enterprise, PEAP) is covered separately in `docs/campus-wifi.
 ## 12. Acceptance checks
 
 - **Every screen in §4:** renders at 240×240 in English and in Chinese, with nothing overlapping or clipped. Compare against the prototype's *Screen states* section.
-- **The controls table in §5:** each row behaves as written. Fast NEXT presses never leave Today. Holding OK goes Picker → Today → Lock → Sleep.
+- **The controls table in §5:** each row behaves as written. Fast NEXT presses never leave Today. Separate OK holds go Picker → Today → Lock → Sleep. NEXT wakes the device to Lock.
 - **Waking:** PLUS from Sleep starts recording within one button press, and the device goes back to Sleep after the sync.
 - **Long titles:** a long English title and a long Chinese title both scroll continuously when highlighted, and are cut with "…" when not.
 - **Offline:** a task checked off offline appears checked immediately and reaches Obsidian after the next sync.

@@ -13,6 +13,7 @@ build/
 sdkconfig.old
 .pio/
 managed_components/
+/work/
 
 # Secrets — never commit
 .env
