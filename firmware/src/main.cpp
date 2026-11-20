@@ -7,12 +7,35 @@
 #include <USB.h>
 #include "fonts.h"
 #include "icons.h"
+#include "ui_kit.h"
+#include "tasks.h"
 #include <Preferences.h>
 #include <esp_task_wdt.h>
 #include <sys/time.h>
 #include <time.h>
 
+using namespace ui;
+
 namespace {
+// Touch targets are drawn and hit-tested from the same rectangles (screen pixels).
+struct Rect {
+    int x,y,w,h;
+    bool contains(int px,int py) const { return px>=x && px<x+w && py>=y && py<y+h; }
+};
+namespace layout {
+constexpr int header=32;                       // Header band; a swipe down from here opens the quick panel.
+constexpr Rect taskList{0,header,240,132};     // Today's scrolling rows, above the When I Have Time strip.
+constexpr int rowPitch=63, rowHeight=60;
+constexpr int strip=taskList.y+taskList.h;     // When I Have Time, to the bottom edge.
+constexpr Rect countTap{0,0,105,header};       // Today header count: remaining <-> completed.
+constexpr Rect backTap{0,0,145,header};        // "< Title" in settings headers.
+constexpr Rect recCancel{8,170,108,64}, recSave{124,170,108,64};
+constexpr Rect pickCancel{8,130,108,72}, pickMove{124,130,108,72};
+constexpr Rect syncTile{10,42,106,66}, languageTile{124,42,106,66}, allSettings{10,176,220,48};
+constexpr Rect panelBrightness{10,116,220,52}, screenBrightness{14,108,212,72};
+constexpr int settingRow=56;
+constexpr Rect clockMinus{14,126,100,42}, clockPlus{126,126,100,42}, clockNext{14,181,212,42};
+}
 USBCDC usbSerial;
 enum class Screen { Lock, Today, Picker, Recording, ConfirmDiscard, Saved, Error, Claude, MD, Panel, Settings, Brightness, SetClock, Sleep, ReleasePower, UnplugPower };
 Screen screen = Screen::Lock;
@@ -27,13 +50,11 @@ int64_t freeBytes=-1;
 uint32_t lastInput, toastStarted;
 bool offlineToast, settingsTouch;
 int slideDirection;
-enum class Motion { None, Left, Right, Up, Down, EdgeLeft, EdgeRight };
 Motion pageMotion=Motion::None;
 Screen renderedScreen=Screen::Lock;
 uint32_t motionEnds=0;
 lv_point_t settingsPoint;
 lv_obj_t *settingsList, *settingRows[SettingCount], *brightnessFill, *brightPercent, *filledPercent, *toast;
-lv_obj_t *panelRoot, *pageLayer;
 constexpr int pageWidth=240;
 constexpr Screen pages[]={Screen::Today,Screen::Claude,Screen::MD};
 lv_obj_t *pageTrack;
@@ -45,10 +66,8 @@ int pageIndex(Screen value) {
 void positionTrack(void *track,int32_t x) {
     lv_obj_set_x(static_cast<lv_obj_t*>(track),x);
 }
-constexpr uint32_t bg=0x0b0c0e, surface=0x1c1f24, line=0x262a30, ink=0xf4f3ef,
-    muted=0x9ca0a8, dim=0x6b7079, yellow=0xffd23f, red=0xff5c4d, due=0xffb067, syncBlue=0x6cb6ff;
 Preferences prefs;
-bool en, sleepAfter, dirty=true;
+bool sleepAfter, dirty=true;
 bool powerHoldStarted=false;
 int focused=0, taskScrollY=0, ticket=0, note=0, battery=-1;
 bool isCharging, chargeSample;
@@ -59,11 +78,6 @@ unsigned batteryIconCount;
 bool showCompleted=false, revealFocus=false;
 lv_obj_t *taskList;
 uint32_t entered, interacted, rotated, lastBattery, lastTick, scrollPeriod=3000;
-uint16_t taskState; // Bits 0..5 completed, bits 8..13 promoted into Today.
-// Local changes not yet sent to the Pi (task edits and recordings). Cleared by a successful sync,
-// which does not exist yet, so the header shows them as waiting.
-uint16_t pendingChanges;
-void notePendingChange() { ++pendingChanges; prefs.putUShort("pending",pendingChanges); }
 const char *faultZh="", *faultEn="";
 lv_obj_t *timerLabel, *recordDot, *bars[20], *countdown, *clockLabel, *dateLabel;
 // Recent input levels (0-20), oldest first, drawn as a scrolling waveform of 5-35 px bars.
@@ -77,32 +91,13 @@ void paintWave() {
     }
 }
 lv_obj_t *overlay, *progressFill;
-lv_obj_t *tickerTitle, *tickerChip, *tickerDots[6];
+lv_obj_t *tickerTitle, *tickerChip, *tickerChipText, *tickerDots[model::maxTasks];
 lv_anim_t scrollAnimation;
 unsigned lastSeconds;
 uint8_t lastLevel;
-const char *tr(const char *zh,const char *english) { return en ? english : zh; }
-struct Item { const char *zh, *english; };
-const Item titles[] = {
-    {"给魏老师发邮件约实验室时间","Email Dr. Weber about lab slot"},
-    {"还图书馆的书","Return library books"},{"买咖啡滤纸","Buy coffee filters"},
-    {"完成报告初稿","Finish report draft"},{"备份照片","Back up photos"},
-    {"读研讨课第四章","Read chapter 4 for seminar"}
-};
-const Item excerpts[] = {
-    {"组会上终于把实验设计讲清楚了。准备充分时，其实没那么紧张。",
-     "The best ideas this week came when I wasn't at the desk. Walk first, then write."},
-    {"散步的时候想明白了：先把问题写下来，答案常常就在问题里。",
-     "Asking one honest question in the seminar was easier than staying quiet."}
-};
-const char *title(int id) { return tr(titles[id].zh,titles[id].english); }
-int tasks(bool today,int *ids) {
-    int n=0;
-    for (int i=0;i<6;++i)
-        if ((i<3 || bool(taskState & (1u<<(8+i)))) == today &&
-            (!today || bool(taskState & (1u<<i))==showCompleted)) ids[n++]=i;
-    return n;
-}
+struct Item { const char *zh, *english; }; // A label in both languages.
+// Screens list Today's unfinished tasks, or the finished ones when the header count is tapped.
+int tasks(bool today,int *ids) { return today?model::today(ids,showCompleted):model::later(ids); }
 void storeBrightness();
 void settlePage(int index) {
     draggingPages=false;
@@ -157,7 +152,7 @@ void audioError(AudioResult r) {
 void recordKey() {
     if (recordingActive()) {
         auto result=finishRecording();
-        if (result==AudioResult::Ok) { notePendingChange(); go(Screen::Saved); startCampusWifiAfterRecording(); } // Upload point once the Pi sync exists.
+        if (result==AudioResult::Ok) { model::notePending(); go(Screen::Saved); startCampusWifiAfterRecording(); } // Upload point once the Pi sync exists.
         else audioError(result);
         return;
     }
@@ -179,41 +174,6 @@ void resolveDiscard(bool discard) {
     if (!discard) { go(Screen::Recording); return; }
     if (discardRecording()) go(recordingFrom);
     else showError("取消失败，请检查 TF 卡","Discard failed. Check SD.");
-}
-lv_obj_t *box(int x,int y,int w,int h,uint32_t color,int radius=0,uint32_t border=0,int thickness=0,
-              lv_obj_t *parent=nullptr) {
-    auto *o=lv_obj_create(parent ? parent : (panelRoot?panelRoot:(pageLayer?pageLayer:lv_scr_act())));
-    lv_obj_remove_style_all(o);
-    lv_obj_clear_flag(o,LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_pos(o,x,y); lv_obj_set_size(o,w,h);
-    lv_obj_set_style_bg_color(o,lv_color_hex(color),0);
-    lv_obj_set_style_bg_opa(o,LV_OPA_COVER,0);
-    lv_obj_set_style_radius(o,radius,0);
-    if (thickness) {
-        lv_obj_set_style_border_color(o,lv_color_hex(border),0);
-        lv_obj_set_style_border_width(o,thickness,0);
-    }
-    return o;
-}
-lv_obj_t *label(int x,int y,int width,const char *s,int size,uint32_t color=ink,
-                lv_text_align_t align=LV_TEXT_ALIGN_LEFT,lv_label_long_mode_t mode=LV_LABEL_LONG_CLIP,
-                lv_obj_t *parent=nullptr) {
-    auto *o=lv_label_create(parent ? parent : (panelRoot?panelRoot:(pageLayer?pageLayer:lv_scr_act())));
-    lv_obj_set_style_text_font(o,fontFor(size),0);
-    lv_obj_set_style_text_color(o,lv_color_hex(color),0);
-    lv_obj_set_style_text_align(o,align,0);
-    lv_label_set_long_mode(o,mode);
-    lv_obj_set_width(o,width);
-    if (mode!=LV_LABEL_LONG_WRAP) lv_obj_set_height(o,fontFor(size)->line_height);
-    lv_label_set_text(o,s);
-    lv_obj_set_pos(o,x,y);
-    return o;
-}
-lv_obj_t *center(int y,const char *s,int size,uint32_t color=ink) {
-    return label(8,y,224,s,size,color,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_WRAP);
-}
-void dots(int x,int y,int count,int selected) {
-    for (int i=0;i<count;++i) box(x+i*9,y,5,5,i==selected?ink:dim,3);
 }
 constexpr int batteryIconWidth=76, batteryIconHeight=26;
 void batteryText(char (&text)[8]) {
@@ -288,51 +248,6 @@ void refreshClock() {
     if (clockLabel) lv_label_set_text(clockLabel,hm);
     if (dateLabel) lv_label_set_text(dateLabel,date);
 }
-// Motion follows the prototype's CSS: every animation eases out.
-void translate(lv_obj_t *obj,int start,int end,bool vertical,int ms) {
-    lv_anim_t a;
-    lv_anim_init(&a); lv_anim_set_var(&a,obj);
-    if (vertical) lv_anim_set_exec_cb(&a,[](void *p,int32_t v){lv_obj_set_style_translate_y(static_cast<lv_obj_t*>(p),v,0);});
-    else lv_anim_set_exec_cb(&a,[](void *p,int32_t v){lv_obj_set_style_translate_x(static_cast<lv_obj_t*>(p),v,0);});
-    lv_anim_set_values(&a,start,end); lv_anim_set_time(&a,ms);
-    lv_anim_set_path_cb(&a,lv_anim_path_ease_out); lv_anim_start(&a);
-}
-void fade(lv_obj_t *obj,lv_opa_t from,int ms) {
-    lv_obj_set_style_opa(obj,from,0);
-    lv_anim_t a;
-    lv_anim_init(&a); lv_anim_set_var(&a,obj);
-    lv_anim_set_exec_cb(&a,[](void *p,int32_t v){lv_obj_set_style_opa(static_cast<lv_obj_t*>(p),lv_opa_t(v),0);});
-    lv_anim_set_values(&a,from,LV_OPA_COVER); lv_anim_set_time(&a,ms);
-    lv_anim_set_path_cb(&a,lv_anim_path_ease_out); lv_anim_start(&a);
-}
-// A screen enters 40 px from its direction of travel while fading in from 20% (CSS pgL/pgR/pgU/pgD).
-void enter(lv_obj_t *obj,Motion motion) {
-    const bool vertical=motion==Motion::Up || motion==Motion::Down;
-    const int ms=motion==Motion::Up?300:(motion==Motion::Down?280:260);
-    translate(obj,motion==Motion::Down || motion==Motion::Right?-40:40,0,vertical,ms);
-    fade(obj,LV_OPA_20,ms);
-    motionEnds=millis()+ms;
-}
-// Edge bounce (CSS pgBL/pgBR): 30% -> 14 px toward the swipe, 65% -> 4 px back, then rest; 0.34 s.
-void bounce(lv_obj_t *obj,int direction) {
-    lv_anim_t a;
-    lv_anim_init(&a); lv_anim_set_var(&a,obj);
-    lv_anim_set_user_data(&a,reinterpret_cast<void*>(intptr_t(direction)));
-    lv_anim_set_custom_exec_cb(&a,[](lv_anim_t *anim,int32_t t){
-        const int dir=int(intptr_t(anim->user_data));
-        auto ease=[](int32_t from,int32_t to,int32_t num,int32_t den){ // ease-out cubic per keyframe
-            const float x=float(num)/den, e=1-(1-x)*(1-x)*(1-x);
-            return int32_t(lroundf(from+(to-from)*e));
-        };
-        int32_t x;
-        if (t<300) x=ease(0,14,t,300);
-        else if (t<650) x=ease(14,-4,t-300,350);
-        else x=ease(-4,0,t-650,350);
-        lv_obj_set_style_translate_x(static_cast<lv_obj_t*>(anim->var),dir*x,0);
-    });
-    lv_anim_set_values(&a,0,1000); lv_anim_set_time(&a,340);
-    lv_anim_start(&a);
-}
 void animateNote(lv_obj_t *obj) {
     if (slideDirection) {
         translate(obj,28*slideDirection,0,false,280);
@@ -347,14 +262,12 @@ void lockView() {
     batteryIcon(right,top+row/2);
     dateLabel=label(128,top+row+3,right-128,"",small,muted,LV_TEXT_ALIGN_RIGHT);
     refreshClock();
-    auto &n=excerpts[note];
+
     int noteTop=top+headerHeight+10;
-    auto *body=label(14,noteTop,212,tr(n.zh,n.english),en?17:18,ink,LV_TEXT_ALIGN_LEFT,LV_LABEL_LONG_WRAP);
+    auto *body=label(14,noteTop,212,model::note(note),en?17:18,ink,LV_TEXT_ALIGN_LEFT,LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(body,en?2:4,0);
     lv_obj_update_layout(body);
-    const char *datesZh[]={"11月16日 20:10","11月17日 07:30"};
-    const char *datesEn[]={"12 Nov · 18:04","15 Nov · 09:22"};
-    auto *stamp=label(14,noteTop+6+lv_obj_get_height(body),212,en?datesEn[note]:datesZh[note],14,muted);
+    auto *stamp=label(14,noteTop+6+lv_obj_get_height(body),212,model::noteTime(note),14,muted);
     animateNote(body); animateNote(stamp);
     dots(14,221,2,note);
     label(40,211,186,tr("OK/上滑 解锁 · + 录音","OK/↑ unlock · + record"),14,muted,LV_TEXT_ALIGN_RIGHT);
@@ -370,22 +283,25 @@ lv_obj_t *scrollTitle(int x,int y,int w,const char *s,bool scroll,bool done=fals
 }
 void updateTicker(int *later,int count) {
     ticket%=count;
-    int id=later[ticket], width=id==3?145:210;
+    int id=later[ticket], width=model::deadline(id)?145:210;
     lv_obj_set_width(tickerTitle,width);
-    lv_label_set_text(tickerTitle,title(id));
-    if (id==3) lv_obj_clear_flag(tickerChip,LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(tickerTitle,model::title(id));
+    if (model::deadline(id)) {
+        lv_label_set_text(tickerChipText,model::deadline(id));
+        lv_obj_clear_flag(tickerChip,LV_OBJ_FLAG_HIDDEN);
+    }
     else lv_obj_add_flag(tickerChip,LV_OBJ_FLAG_HIDDEN);
     for (int i=0;i<count;++i)
         lv_obj_set_style_bg_color(tickerDots[i],lv_color_hex(i==ticket?ink:dim),0);
-    int textWidth=lv_txt_get_width(title(id),strlen(title(id)),fontFor(en?16:17),0,LV_TEXT_FLAG_NONE);
+    int textWidth=lv_txt_get_width(model::title(id),strlen(model::title(id)),fontFor(en?16:17),0,LV_TEXT_FLAG_NONE);
     scrollPeriod=textWidth<=width?3000:1000+(textWidth+40)*1000/30;
     animateNote(tickerTitle); animateNote(tickerChip);
 }
 // Compact sync status left of the battery: a check when nothing is waiting, otherwise an icon and the count.
 void syncStatus(int right,int cy) {
     auto *parent=panelRoot?panelRoot:pageLayer;
-    if (!pendingChanges) { icon(parent,Icon::Check,11,right-11,cy-6,muted); return; }
-    char count[8]; snprintf(count,sizeof(count),"%u",unsigned(pendingChanges));
+    if (!model::pending()) { icon(parent,Icon::Check,11,right-11,cy-6,muted); return; }
+    char count[8]; snprintf(count,sizeof(count),"%u",model::pending());
     const bool online=campusOnline();
     const uint32_t color=online?syncBlue:muted;
     const int w=lv_txt_get_width(count,strlen(count),fontFor(13),0,LV_TEXT_FLAG_NONE);
@@ -394,7 +310,7 @@ void syncStatus(int right,int cy) {
     else icon(parent,Icon::WifiOff,12,right-w-4-12,cy-6,color);
 }
 void todayView() {
-    int ids[6],later[6],n=tasks(true,ids),k=tasks(false,later);
+    int ids[model::maxTasks],later[model::maxTasks],n=tasks(true,ids),k=tasks(false,later);
     focused=constrain(focused,0,max(0,n-(k==0)));
     char remaining[32];
     snprintf(remaining,sizeof(remaining),showCompleted?tr("已完成：%d","Done: %d"):tr("剩余数：%d","Left: %d"),n);
@@ -407,32 +323,32 @@ void todayView() {
     batteryIcon(230,16);
     syncStatus(230-batteryContentWidth()-8,16);
     auto *previousParent=panelRoot;
-    taskList=box(0,32,240,132,bg);
+    taskList=box(layout::taskList.x,layout::taskList.y,layout::taskList.w,layout::taskList.h,bg);
     lv_obj_add_flag(taskList,LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_MOMENTUM);
     lv_obj_set_scroll_dir(taskList,LV_DIR_VER);
     lv_obj_set_scrollbar_mode(taskList,LV_SCROLLBAR_MODE_OFF);
     panelRoot=taskList;
     if (!n) center(47,showCompleted?tr("暂无已完成任务","No completed tasks"):tr("全部完成","All clear"),17,muted);
     for (int i=0;i<n;++i) {
-        int id=ids[i],y=i*63;
-        bool focus=focused==i, done=taskState & (1<<id);
-        if (focus) box(5,y,230,60,surface,9,yellow,2);
+        int id=ids[i],y=i*layout::rowPitch;
+        bool focus=focused==i, done=model::done(id);
+        if (focus) box(5,y,230,layout::rowHeight,surface,9,yellow,2);
         box(15,y+20,20,20,done?muted:(focus?surface:bg),10,done?muted:dim,2);
         if (done) icon(taskList,Icon::Tick,12,19,y+24,bg);
-        const char *meta=id==1?tr("延续","Carried over"):(id==3?tr("周五截止","Due Fri"):"");
-        scrollTitle(45,y+(*meta?8:19),178,title(id),focus,done);
-        if (*meta) label(45,y+33,178,meta,14,id==3?due:muted);
+        const char *meta=model::deadline(id)?model::deadline(id):model::detail(id);
+        scrollTitle(45,y+(*meta?8:19),178,model::title(id),focus,done);
+        if (*meta) label(45,y+33,178,meta,14,model::deadline(id)?due:muted);
     }
     panelRoot=previousParent;
     lv_obj_update_layout(taskList);
     lv_obj_scroll_to_y(taskList,taskScrollY,LV_ANIM_OFF);
     if (revealFocus && focused<n) {
-        int top=focused*63;
-        int offset=constrain(int(lv_obj_get_scroll_y(taskList)),max(0,top+60-132),top);
+        int top=focused*layout::rowPitch;
+        int offset=constrain(int(lv_obj_get_scroll_y(taskList)),max(0,top+layout::rowHeight-layout::taskList.h),top);
         lv_obj_scroll_to_y(taskList,offset,LV_ANIM_ON);
     }
     revealFocus=false;
-    box(0,164,240,1,line);
+    box(0,layout::strip,240,1,line);
     bool pause=focused==n;
     if (pause) box(5,170,230,65,surface,9,yellow,2);
     label(14,179,183,pause?tr("已暂停 · 按 OK 选择","PAUSED · OK TO CHOOSE"):
@@ -441,32 +357,34 @@ void todayView() {
     for (int i=0;i<k;++i) tickerDots[i]=box(226-9*k+9*i,185,5,5,dim,3);
     tickerTitle=scrollTitle(14,200,210,"",true);
     tickerChip=box(166,200,60,23,0x30251c,8);
-    label(0,2,60,tr("周五截止","Due Fri"),13,due,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,tickerChip);
+    tickerChipText=label(0,2,60,"",13,due,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,tickerChip);
     updateTicker(later,k);
 }
 void pickerView() {
-    int ids[6],n=tasks(false,ids);
+    int ids[model::maxTasks],n=tasks(false,ids);
     if (!n) { go(Screen::Today); return; }
     ticket%=n;
     center(18,tr("移到今天？","MOVE TO TODAY?"),14,yellow);
     // Prototype .cfw: the title (up to two lines), then a row with the deadline chip and position dots.
-    auto *heading=center(45,title(ids[ticket]),20);
+    auto *heading=center(45,model::title(ids[ticket]),20);
     lv_obj_update_layout(heading);
     const int lines=max(1,min(2,int(lv_obj_get_height(heading)/fontFor(20)->line_height)));
     lv_obj_set_height(heading,lines*fontFor(20)->line_height);
     lv_obj_set_y(heading,lines==1?53:41);
     animateNote(heading);
     const int rowY=(lines==1?53:41)+lines*fontFor(20)->line_height+8;
-    const bool chip=ids[ticket]==3;
+    const char *deadline=model::deadline(ids[ticket]);
+    const bool chip=deadline!=nullptr;
     const int dotsWidth=n>1?9*n-4:0, chipWidth=chip?60:0, gap=chip && n>1?10:0;
     const int rowX=(240-chipWidth-gap-dotsWidth)/2;
     if (chip) {
         auto *c=box(rowX,rowY-4,60,23,0x30251c,8);
-        label(0,2,60,tr("周五截止","Due Fri"),13,due,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,c);
+        label(0,2,60,deadline,13,due,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,c);
     }
     if (n>1) dots(rowX+chipWidth+gap,rowY+5,n,ticket);
-    box(8,130,108,72,surface,9);
-    box(124,130,108,72,yellow,9);
+    const Rect &c=layout::pickCancel, &m=layout::pickMove;
+    box(c.x,c.y,c.w,c.h,surface,9);
+    box(m.x,m.y,m.w,m.h,yellow,9);
     label(8,142,108,tr("取消","Cancel"),20,ink,LV_TEXT_ALIGN_CENTER);
     label(8,173,108,tr("长按 OK","Hold OK"),13,muted,LV_TEXT_ALIGN_CENTER);
     label(124,142,108,tr("移入","Move"),20,bg,LV_TEXT_ALIGN_CENTER);
@@ -478,10 +396,6 @@ void showDuration(lv_obj_t *o,uint32_t seconds) {
     snprintf(s,sizeof(s),"%lu:%02lu",(unsigned long)(seconds/60),(unsigned long)(seconds%60));
     lv_label_set_text(o,s);
 }
-void symbol(int x,int y,int w,const char *glyph,lv_obj_t *parent=nullptr) {
-    auto *o=label(x,y,w,glyph,14,ink,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,parent);
-    lv_obj_set_style_text_font(o,LV_FONT_DEFAULT,0);
-}
 void settingsHeader(const char *title) {
     symbol(8,9,12,LV_SYMBOL_LEFT);
     label(25,5,126,title,17);
@@ -492,13 +406,14 @@ void settingsHeader(const char *title) {
 void paintBrightness() {
     const bool big=screen==Screen::Brightness;
     int pct=brightness*5;
-    lv_obj_set_width(brightnessFill,(big?212:220)*pct/100);
+    lv_obj_set_width(brightnessFill,(big?layout::screenBrightness:layout::panelBrightness).w*pct/100);
     lv_label_set_text_fmt(brightPercent,"%d%%",pct);
     if (!big) lv_label_set_text_fmt(filledPercent,"%d%%",pct);
 }
 void brightnessBar(bool big) {
-    int w=big?212:220,h=big?72:52;
-    auto *bar=box(big?14:10,big?108:116,w,h,0x2a2d33,12);
+    const Rect &r=big?layout::screenBrightness:layout::panelBrightness;
+    const int w=r.w,h=r.h;
+    auto *bar=box(r.x,r.y,w,h,0x2a2d33,12);
     lv_obj_set_style_clip_corner(bar,true,0);
     const int textY=(h-fontFor(16)->line_height)/2;
     icon(bar,Icon::Sun,20,12,(h-20)/2,muted);
@@ -526,14 +441,13 @@ void panelView() {
     icon(panel,campusOnline()?Icon::Wifi:Icon::WifiOff,15,10,15,muted);
     label(31,22-fontFor(14)->line_height/2,110,campusOnline()?"HKUSTGZ":tr("未连接","Disconnected"),14);
     label(145,22-fontFor(13)->line_height/2,85,campusOnline()?tr("在线","Online"):tr("离线","Offline"),13,muted,LV_TEXT_ALIGN_RIGHT);
-    box(10,42,106,66,surface,12);
-    box(124,42,106,66,surface,12);
+    for (const Rect &t : {layout::syncTile,layout::languageTile}) box(t.x,t.y,t.w,t.h,surface,12);
     icon(panel,Icon::Sync,19,10+(106-19)/2,54,ink);
     label(10,78,106,tr("立即同步","Sync now"),14,ink,LV_TEXT_ALIGN_CENTER);
     label(124,48,106,tr("中","EN"),20,ink,LV_TEXT_ALIGN_CENTER);
     label(124,78,106,tr("语言","Language"),14,ink,LV_TEXT_ALIGN_CENTER);
     brightnessBar(false);
-    box(10,176,220,48,surface,12);
+    box(layout::allSettings.x,layout::allSettings.y,layout::allSettings.w,layout::allSettings.h,surface,12);
     label(22,188,172,tr("全部设置","All settings"),17);
     symbol(202,193,20,LV_SYMBOL_RIGHT);
     box(102,232,36,4,0x3a3e45,2);
@@ -549,7 +463,7 @@ void styleRow(int i) {
 }
 void settingsView() {
     settingsHeader(tr("设置","Settings"));
-    settingsList=box(0,32,240,208,bg);
+    settingsList=box(0,layout::header,240,240-layout::header,bg);
     lv_obj_add_flag(settingsList,LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM);
     lv_obj_set_scroll_dir(settingsList,LV_DIR_VER);
     lv_obj_set_scrollbar_mode(settingsList,LV_SCROLLBAR_MODE_OFF);
@@ -561,7 +475,7 @@ void settingsView() {
                         {"自动休眠","Auto-sleep"},{"存储","Storage"},{"电量","Battery"},{"时钟","Clock"},{"固件","Firmware"}};
     const Item times[]={{"30 秒","30 s"},{"1 分钟","1 min"},{"5 分钟","5 min"},{"从不","Never"}};
     for (int i=0;i<SettingCount;++i) {
-        auto *row=settingRows[i]=box(5,56*i,230,56,bg,9,0,0,settingsList);
+        auto *row=settingRows[i]=box(5,layout::settingRow*i,230,layout::settingRow,bg,9,0,0,settingsList);
         String value;
         const char *sub="";
         switch(i) {
@@ -593,7 +507,7 @@ void settingsView() {
         }
         styleRow(i);
     }
-    box(0,SettingCount*56+7,1,1,bg,0,0,0,settingsList);
+    box(0,SettingCount*layout::settingRow+7,1,1,bg,0,0,0,settingsList);
     lv_obj_update_layout(settingsList);
     lv_obj_scroll_to_y(settingsList,settingsY,LV_ANIM_OFF);
     refreshClock();
@@ -643,9 +557,9 @@ void clockEditorView() {
     const char *names[]={tr("年","Year"),tr("月","Month"),tr("日","Day"),tr("时","Hour"),tr("分","Minute")};
     char date[32]; snprintf(date,sizeof(date),"%04d-%02d-%02d  %02d:%02d",clockParts[0],clockParts[1],clockParts[2],clockParts[3],clockParts[4]);
     center(51,date,18);center(91,names[clockField],17,yellow);
-    box(14,126,100,42,surface,7); box(126,126,100,42,surface,7);
+    for (const Rect &b : {layout::clockMinus,layout::clockPlus}) box(b.x,b.y,b.w,b.h,surface,7);
     label(14,131,100,"-",20,ink,LV_TEXT_ALIGN_CENTER);label(126,131,100,"+",20,ink,LV_TEXT_ALIGN_CENTER);
-    box(14,181,212,42,surface,7);
+    box(layout::clockNext.x,layout::clockNext.y,layout::clockNext.w,layout::clockNext.h,surface,7);
     center(191,clockField==4?tr("保存","Save"):tr("下一项","Next field"),17);
 }
 void activateSetting(int i) {
@@ -732,9 +646,10 @@ void render() {
             paintWave();
         }
         for (int i=0;i<2;++i) {
-            int x=i?124:8;
+            const Rect &b=i?layout::recSave:layout::recCancel;
+            const int x=b.x;
             bool selected=confirm && discardSelected==bool(i);
-            box(x,170,108,64,surface,9,yellow,selected?2:0);
+            box(b.x,b.y,b.w,b.h,surface,9,yellow,selected?2:0);
             const char *action=i?tr("结束并保存","Stop & save"):tr("取消","Cancel");
             if (confirm) action=i?tr("丢弃","Discard"):tr("继续录音","Keep recording");
             label(x,confirm?191:180,108,action,confirm&&en?14:17,confirm&&i?red:ink,LV_TEXT_ALIGN_CENTER);
@@ -768,7 +683,7 @@ void render() {
     }
     refreshBatteryWidgets();
     if (pageMotion==Motion::EdgeLeft || pageMotion==Motion::EdgeRight) bounce(pageLayer,pageMotion==Motion::EdgeLeft?-1:1);
-    else if (pageMotion!=Motion::None) enter(pageLayer,pageMotion);
+    else if (pageMotion!=Motion::None) motionEnds=millis()+enter(pageLayer,pageMotion);
     pageMotion=Motion::None; slideDirection=0;
     if (offlineToast) {
         // Prototype toast: an ink pill 82 px above the bottom edge.
@@ -779,28 +694,27 @@ void render() {
         fade(toast,LV_OPA_TRANSP,160);
     }
 }
-void saveChange(uint16_t value) {
-    if (prefs.putUShort("tasks",value)==sizeof(value)) { taskState=value; notePendingChange(); }
-    else { faultZh="任务保存失败"; faultEn="Task save failed"; go(Screen::Error); }
+void saveChange(bool saved) {
+    if (!saved) { faultZh="任务保存失败"; faultEn="Task save failed"; go(Screen::Error); }
     dirty=true;
 }
 void choose() {
-    int ids[6],n=tasks(false,ids);
+    int ids[model::maxTasks],n=tasks(false,ids);
     if (!n) return;
     int id=ids[ticket%n];
     showCompleted=false; revealFocus=true;
     go(Screen::Today);
-    saveChange(taskState | (1u<<(8+id)));
-    int today[6];
+    saveChange(model::moveToToday(id));
+    int today[model::maxTasks];
     int count=tasks(true,today);
     for (int i=0;i<count;++i) if (today[i]==id) focused=i;
     ticket=0;
 }
 void browse(int step) {
     slideDirection=step;
-    if (screen==Screen::Lock) note=(note+step+2)%2;
+    if (screen==Screen::Lock) note=(note+step+model::noteCount())%model::noteCount();
     else {
-        int ids[6],n=tasks(false,ids);
+        int ids[model::maxTasks],n=tasks(false,ids);
         if (!n) return;
         ticket=(ticket+step+n)%n;
     }
@@ -810,7 +724,7 @@ void browse(int step) {
 void shortKey(int pin) {
     if (pin==plusPin) { recordKey(); return; }
     bool ok=pin==okPin;
-    int ids[6],later[6],n=tasks(true,ids),k=tasks(false,later);
+    int ids[model::maxTasks],later[model::maxTasks],n=tasks(true,ids),k=tasks(false,later);
     interacted=millis();
     switch(screen) {
     case Screen::Recording: if (!ok) askDiscard(); break;
@@ -822,7 +736,7 @@ void shortKey(int pin) {
     case Screen::Lock: if (ok) go(Screen::Today); else browse(1); break;
     case Screen::Today:
         if (!ok && n+(k>0)>0) { focused=(focused+1)%(n+(k>0)); revealFocus=true; rotated=interacted; dirty=true; }
-        else if (focused<n) saveChange(taskState ^ (1u<<ids[focused]));
+        else if (focused<n) saveChange(model::toggleDone(ids[focused]));
         else if (k) go(Screen::Picker);
         break;
     case Screen::Picker: if (ok) choose(); else browse(1); break;
@@ -920,61 +834,63 @@ void pollKeys(uint32_t now) {
 void gesture(int x,int y,int dx,int dy) {
     const bool horizontal=abs(dx)>12 && abs(dx)>abs(dy);
     const bool tap=abs(dx)<=12 && abs(dy)<=12;
-    int step=dx<0?1:-1, ids[6], later[6], n=tasks(true,ids), k=tasks(false,later);
+    int step=dx<0?1:-1, ids[model::maxTasks], later[model::maxTasks], n=tasks(true,ids), k=tasks(false,later);
     interacted=millis();
     if (recordingActive()) {
-        if (!tap || y<170 || y>=234 || x<8 || x>=232 || (x>=116 && x<124)) return;
-        if (screen==Screen::ConfirmDiscard) resolveDiscard(x>=124);
-        else if (x>=124) recordKey();
+        const bool save=layout::recSave.contains(x,y);
+        if (!tap || (!save && !layout::recCancel.contains(x,y))) return;
+        if (screen==Screen::ConfirmDiscard) resolveDiscard(save);
+        else if (save) recordKey();
         else askDiscard();
-    } else if (y<32 && dy>=30 && dy>abs(dx) &&
+    } else if (y<layout::header && dy>=30 && dy>abs(dx) &&
         (screen==Screen::Today || screen==Screen::Claude || screen==Screen::MD)) {
         panelFrom=screen; go(Screen::Panel);
     } else if (screen==Screen::Panel) {
         if (-dy>=30 && -dy>abs(dx)) go(panelFrom);
-        else if (tap && y>=42 && y<108) {
-            if (x>=10 && x<116) syncNow();
-            else if (x>=124 && x<230) changeLanguage();
-        } else if (tap && x>=10 && x<230 && y>=176 && y<224) {
+        else if (tap && layout::syncTile.contains(x,y)) syncNow();
+        else if (tap && layout::languageTile.contains(x,y)) changeLanguage();
+        else if (tap && layout::allSettings.contains(x,y)) {
             settingFocus=0; settingsY=0; freeBytes=cardFreeBytes(); go(Screen::Settings);
         }
     } else if (screen==Screen::Settings) {
         if (dx>=40 && horizontal) go(Screen::Panel);
-        else if (tap && y<32 && x<145) go(Screen::Panel);
-        else if (tap && settingsList && y>=32) {
-            int pos=y-32+lv_obj_get_scroll_y(settingsList);
-            if (pos>=0 && pos<SettingCount*56) {
+        else if (tap && layout::backTap.contains(x,y)) go(Screen::Panel);
+        else if (tap && settingsList && y>=layout::header) {
+            int pos=y-layout::header+lv_obj_get_scroll_y(settingsList);
+            if (pos>=0 && pos<SettingCount*layout::settingRow) {
                 int old=settingFocus;
-                settingFocus=pos/56;
+                settingFocus=pos/layout::settingRow;
                 styleRow(old); styleRow(settingFocus);
                 activateSetting(settingFocus);
             }
         }
     } else if (screen==Screen::SetClock && tap) {
-        if (y<32 && x<145) go(Screen::Settings);
-        else if (y>=126 && y<168) adjustClock(x<120?-1:1);
-        else if (y>=181 && y<224) nextClockField();
+        if (layout::backTap.contains(x,y)) go(Screen::Settings);
+        else if (layout::clockMinus.contains(x,y)) adjustClock(-1);
+        else if (layout::clockPlus.contains(x,y)) adjustClock(1);
+        else if (layout::clockNext.contains(x,y)) nextClockField();
     } else if (screen==Screen::Brightness) {
-        if (tap && y<32 && x<145) go(Screen::Settings);
+        if (tap && layout::backTap.contains(x,y)) go(Screen::Settings);
     } else if (screen==Screen::Lock) {
         if (-dy>=60 && -dy>abs(dx)) go(Screen::Today);
         else if (horizontal && abs(dx)>=24) browse(step);
-    } else if (screen==Screen::Today && y>=164) {
+    } else if (screen==Screen::Today && y>=layout::strip) {
         if (k && (horizontal || tap)) { focused=n; if (horizontal) browse(step); else go(Screen::Picker); }
-    } else if (screen==Screen::Today && tap && x<105 && y<32) {
+    } else if (screen==Screen::Today && tap && layout::countTap.contains(x,y)) {
         showCompleted=!showCompleted; focused=0;
         if(taskList) lv_obj_scroll_to_y(taskList,0,LV_ANIM_OFF);
         taskScrollY=0; dirty=true;
     } else if (screen==Screen::Picker) {
         if (horizontal) browse(step);
-        else if (tap && y>=130 && y<202) { if (x<116) go(Screen::Today); else if (x>=124) choose(); }
+        else if (tap && layout::pickCancel.contains(x,y)) go(Screen::Today);
+        else if (tap && layout::pickMove.contains(x,y)) choose();
     } else if (horizontal && (screen==Screen::Today || screen==Screen::Claude || screen==Screen::MD)) {
         int page=pageIndex(screen);
         if (page+step<0 || page+step>2) { pageMotion=step>0?Motion::EdgeLeft:Motion::EdgeRight; dirty=true; }
         else go(pages[page+step]);
-    } else if (tap && screen==Screen::Today && taskList && y>=32 && y<164) {
-        int pos=y-32+lv_obj_get_scroll_y(taskList);
-        if (pos>=0 && pos%63<60 && pos/63<n) { focused=pos/63; shortKey(okPin); }
+    } else if (tap && screen==Screen::Today && taskList && layout::taskList.contains(x,y)) {
+        int pos=y-layout::taskList.y+lv_obj_get_scroll_y(taskList);
+        if (pos>=0 && pos%layout::rowPitch<layout::rowHeight && pos/layout::rowPitch<n) { focused=pos/layout::rowPitch; shortKey(okPin); }
     }
 }
 void pollTouch(uint32_t now) {
@@ -995,20 +911,20 @@ void pollTouch(uint32_t now) {
     if (state==Contact::Pressed) {
         if (!tracking) {
             startX=tx; startY=ty; tracking=true; from=screen;
-            listTouch=screen==Screen::Today && ty>=32 && ty<164;
-            pageTouch=pageTrack && from==renderedScreen && (from!=Screen::Today || ty<164);
+            listTouch=screen==Screen::Today && layout::taskList.contains(tx,ty);
+            pageTouch=pageTrack && from==renderedScreen && (from!=Screen::Today || ty<layout::strip);
             verticalDrag=false;
             if (pageTouch) {
                 trackStart=lv_obj_get_style_x(pageTrack,0);
                 draggingPages=lv_anim_del(pageTrack,positionTrack);
             }
-            slider=(screen==Screen::Panel && tx>=10 && tx<230 && ty>=116 && ty<168) ||
-                   (screen==Screen::Brightness && tx>=14 && tx<226 && ty>=108 && ty<180);
+            slider=(screen==Screen::Panel && layout::panelBrightness.contains(tx,ty)) ||
+                   (screen==Screen::Brightness && layout::screenBrightness.contains(tx,ty));
             moved=screen==Screen::Settings && settingsList && lv_obj_is_scrolling(settingsList);
             if (listTouch && taskList && lv_obj_is_scrolling(taskList)) moved=true;
         }
         x=tx; y=ty; lastInput=lastSeen=now;
-        settingsTouch=screen==from && ((from==Screen::Settings && startY>=32) || listTouch);
+        settingsTouch=screen==from && ((from==Screen::Settings && startY>=layout::header) || listTouch);
         settingsPoint={lv_coord_t(x),lv_coord_t(y)};
         int dx=x-startX, dy=y-startY;
         if (pageTouch && pageTrack && from==screen && !verticalDrag) {
@@ -1026,8 +942,8 @@ void pollTouch(uint32_t now) {
         }
         if (abs(x-startX)>=6 || abs(y-startY)>=6) moved=true;
         if (slider && screen==from) {
-            const int inset=screen==Screen::Panel?10:14, width=240-2*inset;
-            setBrightnessLevel(((x-inset)*20+width-1)/width);
+            const Rect &bar=screen==Screen::Panel?layout::panelBrightness:layout::screenBrightness;
+            setBrightnessLevel(((x-bar.x)*20+bar.w-1)/bar.w);
         }
     } else if (tracking && (state==Contact::Released || now-lastSeen>100)) {
         tracking=settingsTouch=false;
@@ -1052,7 +968,7 @@ void pollTouch(uint32_t now) {
     }
 }
 void updateView(uint32_t now) {
-    int ids[6],n=tasks(true,ids);
+    int ids[model::maxTasks],n=tasks(true,ids);
     bool idleScreen=screen==Screen::Lock || screen==Screen::Today || screen==Screen::MD ||
                     screen==Screen::Claude || screen==Screen::Panel || screen==Screen::Settings ||
                     screen==Screen::Brightness;
@@ -1067,7 +983,7 @@ void updateView(uint32_t now) {
     if (screen==Screen::Today && !overlay) {
         if (focused==n && now-interacted>=10000) { focused=0; rotated=now; dirty=true; }
         else if (!dirty && focused!=n && now-rotated>=scrollPeriod) {
-            int later[6], count=tasks(false,later);
+            int later[model::maxTasks], count=tasks(false,later);
             if (count>1) { ++ticket; slideDirection=1; updateTicker(later,count); slideDirection=0; }
             rotated=now;
         }
@@ -1169,8 +1085,7 @@ void setup() {
     en=prefs.getBool("english",false);
     savedBrightness=brightness=constrain(int(prefs.getUChar("brightness",16)),1,20);
     sleepOption=constrain(int(prefs.getUChar("sleep",1)),0,3);
-    taskState=prefs.getUShort("tasks",0);
-    pendingChanges=prefs.getUShort("pending",0);
+    model::load();
     battery=batteryPercent();
     isCharging=chargeSample=charging();
     chargeChangedAt=millis();

@@ -20,6 +20,6 @@ done
 cc -c -DFONTS_PATH="\"$firmware/assets/fonts.bin\"" "$here/fontdata_mac.S" -o "$out/fontdata.o"
 c++ -std=gnu++17 -O1 -g -Wall -Wno-unused-function $flags -include Arduino.h \
     -I"$here/include" -I"$lvgl" -I"$firmware/src" \
-    "$firmware/src/main.cpp" "$firmware/src/fonts.cpp" "$firmware/src/icons.cpp" "$firmware/src/icons_data.cpp" "$here/sim.cpp" \
+    "$firmware/src/main.cpp" "$firmware/src/fonts.cpp" "$firmware/src/icons.cpp" "$firmware/src/ui_kit.cpp" "$firmware/src/tasks.cpp" "$firmware/src/icons_data.cpp" "$here/sim.cpp" \
     "$out/fontdata.o" $objs -lz -o "$out/murmur-sim"
 echo "$out/murmur-sim"
