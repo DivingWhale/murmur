@@ -80,7 +80,24 @@ The helper finds Murmur by USB ID and sets its clock. On first use, enter the ca
 
 Leave the original TF card inserted for standalone login. An online session triggers SNTP. Settings → Clock shows network time status. The serial command `wifi clock` reports the last SNTP update and whether the board used the cold-start recovery path this boot. If recovery cannot authenticate the stored certificate or reach a time server, Settings → Clock and the USB helper can supply the date. If the card was missing, insert it and select Settings → Wi-Fi to retry. Updating the application partition preserves the NVS key and card files.
 
-Over USB, `wifi profile` reports whether the device has a saved key, `wifi status` reports the connection state, and `wifi off` ends the session. `wifi forget` disconnects and removes the active key from NVS. `wifi diag` prints the last reset reason and, after a watchdog reset, the Wi-Fi step that was running (1–2, 4: switching the radio off; 10: configuring a login; 20: reading the profile from the card). An encrypted file can remain on the card. Provision again to create a fresh key.
+Over USB, `wifi profile` reports whether the device has a saved key, `wifi status` reports the connection state, and `wifi off` ends the session. `wifi forget` disconnects and removes the active key from NVS. An encrypted file can remain on the card. Provision again to create a fresh key. `wifi auto` starts the same self-ending session as Settings → Wi-Fi.
+
+### Diagnosing a hang
+
+A hung main loop reboots the handheld after 15 s (task watchdog). Afterwards, `wifi diag` prints `reset=<esp_reset_reason> loop_phase=<n> wifi_step=<n>` from breadcrumbs kept in RTC memory. A power-on reset clears them.
+
+| `loop_phase` | Main loop was in | `wifi_step` | Wi-Fi code was |
+|---|---|---|---|
+| 1 | recording service | 1 | stopping SNTP and disconnecting |
+| 2 | buttons | 2 | removing the EAP configuration |
+| 3 | touch | 4 | switching the radio off (`WiFi.mode(WIFI_OFF)`) |
+| 4 | serial commands | 10 | configuring and starting a login |
+| 5 | Wi-Fi service | 20 | reading the saved profile from the card |
+| 6 | screen update | 0 | none of the above |
+| 7 | LVGL timers | | |
+| 8 | idle delay | | |
+
+To reproduce a hang, run `work/venv/bin/python firmware/tools/wifi_stress.py` (Windows: `.\work\venv\Scripts\python.exe`). It cycles automatic, manual and interrupted sessions, and prints `wifi diag` if the device reboots.
 
 ## Risks to check early
 

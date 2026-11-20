@@ -7,6 +7,7 @@ uint32_t campusNetworkTime();
 void startSavedCampusWifi(bool manual=false);
 void startCampusWifiOnWake();
 void beginCampusDiagnostics(); // Call first in setup().
+void diagLoopPhase(uint8_t phase); // Main-loop breadcrumb for `wifi diag`.
 void stopCampusWifi();
 bool serviceCampusWifi();
 void campusCommand(char *command, Print &out);

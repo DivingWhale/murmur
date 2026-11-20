@@ -1099,10 +1099,13 @@ void setup() {
 void loop() {
     uint32_t now=millis();
     lv_tick_inc(now-lastTick); lastTick=now;
+    // Breadcrumb codes for `wifi diag`: see docs/campus-wifi.md.
+    diagLoopPhase(1);
     if (recordingActive()) {
         auto result=serviceRecording();
         if (result!=AudioResult::Ok) audioError(result);
     }
+    diagLoopPhase(2);
     pollKeys(now);
     if (screen==Screen::ReleasePower || screen==Screen::UnplugPower) {
         if (dirty) render();
@@ -1111,13 +1114,19 @@ void loop() {
         return;
     }
     now=millis();
+    diagLoopPhase(3);
     pollTouch(now);
+    diagLoopPhase(4);
     serialSettings();
+    diagLoopPhase(5);
     if (serviceCampusWifi()) {
         refreshClock();
         if (screen==Screen::Settings || screen==Screen::Panel || screen==Screen::SetClock) dirty=true;
     }
+    diagLoopPhase(6);
     updateView(millis());
+    diagLoopPhase(7);
     lv_timer_handler();
+    diagLoopPhase(8);
     delay(screen==Screen::Sleep?10:2);
 }

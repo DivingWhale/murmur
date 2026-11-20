@@ -36,10 +36,11 @@ uint32_t retryAt=0;
 std::atomic<bool> linkDown{true};
 
 // Breadcrumbs that survive a watchdog reset, reported by `wifi diag`.
-constexpr uint32_t stageMagic=0x4d524d00; // "MRM"
+// Layout: magic (16 bits) | main-loop phase (8) | Wi-Fi step (8).
+constexpr uint32_t stageMagic=0x4d520000; // "MR"
 RTC_NOINIT_ATTR uint32_t rtcStage;
 uint32_t stageBeforeReset;
-void stage(uint8_t s) { rtcStage=stageMagic|s; }
+void stage(uint8_t s) { rtcStage=stageMagic|(rtcStage&0xff00u)|s; }
 
 // This SDK builds lwIP without core locking. SNTP must only be touched from
 // the tcpip thread, otherwise its timers can corrupt and hang the stack.
@@ -257,9 +258,9 @@ bool serviceCampusWifi() {
 }
 void campusCommand(char *cmd,Print &out) {
     if (!strcmp(cmd,"diag")) {
-        // Stage codes: 1, 2, 4 stopping the radio, 10 configuring a join, 20 reading the card profile.
-        out.printf("wifi diag reset=%d stage_before_reset=%lu\n",int(esp_reset_reason()),
-                   (unsigned long)stageBeforeReset);
+        // Codes are listed in docs/campus-wifi.md. Zero means none was recorded.
+        out.printf("wifi diag reset=%d loop_phase=%lu wifi_step=%lu\n",int(esp_reset_reason()),
+                   (unsigned long)(stageBeforeReset>>8&0xff),(unsigned long)(stageBeforeReset&0xff));
         return;
     }
     if (!strcmp(cmd,"clock")) {
@@ -280,6 +281,7 @@ void campusCommand(char *cmd,Print &out) {
     }
     if (!strcmp(cmd,"profile")) { out.println(hasCampusProfile()?"wifi saved":"wifi empty"); return; }
     if (!strcmp(cmd,"connect")) startSavedCampusWifi(true);
+    if (!strcmp(cmd,"auto")) { startSavedCampusWifi(false); strcpy(cmd,"status"); } // Same session as Settings → Wi-Fi.
     if (!strcmp(cmd,"forget") || !strcmp(cmd,"off")) {
         stopCampusWifi();
         if (!strcmp(cmd,"forget")) out.println(forgetCampusProfile()?"wifi forgotten":"wifi error storage");
@@ -310,9 +312,12 @@ void campusCommand(char *cmd,Print &out) {
     out.println("wifi error command");
 }
 void beginCampusDiagnostics() {
-    const bool valid=(rtcStage&0xffffff00u)==stageMagic && esp_reset_reason()!=ESP_RST_POWERON;
-    stageBeforeReset=valid?(rtcStage&0xff):0;
-    stage(0);
+    const bool valid=(rtcStage&0xffff0000u)==stageMagic && esp_reset_reason()!=ESP_RST_POWERON;
+    stageBeforeReset=valid?(rtcStage&0xffffu):0;
+    rtcStage=stageMagic;
+}
+void diagLoopPhase(uint8_t phase) {
+    rtcStage=stageMagic|(uint32_t(phase)<<8)|(rtcStage&0xffu);
 }
 void startSavedCampusWifi(bool manual) {
     const bool active=campusOnline() || state==State::Joining || state==State::ClockOnly;
