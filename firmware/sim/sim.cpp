@@ -123,6 +123,7 @@ bool campusOnline() { return online; }
 uint32_t campusNetworkTime() { return online ? uint32_t(sim_time(nullptr)) : 0; }
 void startSavedCampusWifi(bool) {}
 void startCampusWifiOnWake() {}
+void startCampusWifiAfterRecording() {}
 void stopCampusWifi() {}
 bool serviceCampusWifi() { return false; }
 void campusCommand(char *cmd, Print &out) { out.printf("wifi sim %s\n", cmd); }

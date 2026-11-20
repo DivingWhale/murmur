@@ -157,7 +157,7 @@ void audioError(AudioResult r) {
 void recordKey() {
     if (recordingActive()) {
         auto result=finishRecording();
-        if (result==AudioResult::Ok) { notePendingChange(); go(Screen::Saved); startSavedCampusWifi(); } // Upload point once the Pi sync exists.
+        if (result==AudioResult::Ok) { notePendingChange(); go(Screen::Saved); startCampusWifiAfterRecording(); } // Upload point once the Pi sync exists.
         else audioError(result);
         return;
     }
@@ -449,9 +449,22 @@ void pickerView() {
     if (!n) { go(Screen::Today); return; }
     ticket%=n;
     center(18,tr("移到今天？","MOVE TO TODAY?"),14,yellow);
-    animateNote(center(53,title(ids[ticket]),20));
-    dots(118-(n-1)*4,111,n,ticket);
-    if (ids[ticket]==3) center(85,tr("周五截止","Due Fri"),14,due);
+    // Prototype .cfw: the title (up to two lines), then a row with the deadline chip and position dots.
+    auto *heading=center(45,title(ids[ticket]),20);
+    lv_obj_update_layout(heading);
+    const int lines=max(1,min(2,int(lv_obj_get_height(heading)/fontFor(20)->line_height)));
+    lv_obj_set_height(heading,lines*fontFor(20)->line_height);
+    lv_obj_set_y(heading,lines==1?53:41);
+    animateNote(heading);
+    const int rowY=(lines==1?53:41)+lines*fontFor(20)->line_height+8;
+    const bool chip=ids[ticket]==3;
+    const int dotsWidth=n>1?9*n-4:0, chipWidth=chip?60:0, gap=chip && n>1?10:0;
+    const int rowX=(240-chipWidth-gap-dotsWidth)/2;
+    if (chip) {
+        auto *c=box(rowX,rowY-4,60,23,0x30251c,8);
+        label(0,2,60,tr("周五截止","Due Fri"),13,due,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,c);
+    }
+    if (n>1) dots(rowX+chipWidth+gap,rowY+5,n,ticket);
     box(8,130,108,72,surface,9);
     box(124,130,108,72,yellow,9);
     label(8,142,108,tr("取消","Cancel"),20,ink,LV_TEXT_ALIGN_CENTER);

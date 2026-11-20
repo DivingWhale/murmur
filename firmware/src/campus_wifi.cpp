@@ -9,6 +9,7 @@
 #include <mbedtls/ssl.h>
 #include <mbedtls/sha256.h>
 #include <Preferences.h>
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <ctime>
@@ -59,6 +60,15 @@ void sntpStop(void *) { if (sntp_enabled()) sntp_stop(); }
 constexpr uint32_t autoOnlineLimit=20000, autoAfterTime=2000, manualOnlineLimit=300000;
 constexpr uint32_t wakeInterval=30*60000;
 bool manualSession=false, everOnline=false;
+// Automatic attempts back off after failed logins (for example a changed password),
+// so wakes and recordings do not each spend up to 30 s of radio time: 2, 4, 8 ... 60 min.
+unsigned failStreak=0;
+uint32_t failedAt=0;
+uint32_t backoffRemaining() {
+    if (!failStreak) return 0;
+    const uint32_t wait=std::min(60u,1u<<std::min(failStreak,6u))*60000u, since=millis()-failedAt;
+    return since<wait?wait-since:0;
+}
 uint32_t onlineAt=0;
 std::atomic<uint32_t> sessionTimeAt{0};
 bool readPeer(CampusPeer &peer) {
@@ -109,6 +119,7 @@ int checkDates(void *,mbedtls_x509_crt *cert,int depth,uint32_t *flags) {
     return 0;
 }
 void stopRadio(State next) {
+    if (next==State::Failed && (state==State::Joining || state==State::ClockOnly)) { ++failStreak; failedAt=millis(); }
     if (WiFi.getMode()!=WIFI_OFF) {
         stage(1);
         tcpip_callback(sntpStop,nullptr);
@@ -214,7 +225,7 @@ bool serviceCampusWifi() {
             }
             state=bootstrap?State::ClockOnly:State::Online;
             networkRetries=0;
-            if (!bootstrap) { rememberVerifiedPeer(); everOnline=true; }
+            if (!bootstrap) { rememberVerifiedPeer(); everOnline=true; failStreak=0; }
             started=onlineAt=millis(); clockUpdated.store(false); sessionTimeAt.store(0);
             sntp_set_time_sync_notification_cb([](timeval *t){
                 lastNetworkTime.store(t->tv_sec);
@@ -296,7 +307,8 @@ void campusCommand(char *cmd,Print &out) {
         else if (state==State::ClockOnly) out.println("wifi syncing clock");
         else if (state==State::Deferred) out.println("wifi starting");
         else if (state==State::MissingCard) out.println("wifi profile unavailable");
-        else if (state==State::Failed) out.printf("wifi failed reason=%u cert_flags=%u\n",reason.load(),certFlags.load());
+        else if (state==State::Failed) out.printf("wifi failed reason=%u cert_flags=%u auto_retry_s=%lu\n",reason.load(),certFlags.load(),
+                                                (unsigned long)(backoffRemaining()/1000));
         else out.println("wifi off");
         return;
     }
@@ -325,7 +337,11 @@ void startSavedCampusWifi(bool manual) {
     else if (!active) manualSession=false; // Never shorten a running manual session.
     resumeSavedCampusWifi();
 }
+void startCampusWifiAfterRecording() {
+    if (!backoffRemaining()) startSavedCampusWifi(false);
+}
 void startCampusWifiOnWake() {
+    if (backoffRemaining()) return;
     // A login costs several seconds of radio time. Only repeat it on wake when
     // the clock needs setting or the last session is old.
     if (time(nullptr)<1704067200 || !everOnline || millis()-onlineAt>=wakeInterval)
