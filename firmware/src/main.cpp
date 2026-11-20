@@ -7,6 +7,7 @@
 #include <USB.h>
 #include "fonts.h"
 #include <Preferences.h>
+#include <esp_task_wdt.h>
 #include <sys/time.h>
 #include <time.h>
 
@@ -1062,6 +1063,7 @@ void serialSettings() {
 }
 
 void setup() {
+    beginCampusDiagnostics();
     boardBegin();
     static lv_indev_drv_t touchDriver;
     lv_indev_drv_init(&touchDriver);
@@ -1089,6 +1091,10 @@ void setup() {
     for (auto &k:keys) { k.used=k.down=k.raw=(digitalRead(k.pin)==LOW); }
     go(Screen::Lock);
     startSavedCampusWifi();
+    // A hung loop otherwise needs a power cut: the PWR gesture runs in loop().
+    // Reboot instead. `wifi diag` then reports where Wi-Fi code was.
+    esp_task_wdt_init(15,true);
+    enableLoopWDT();
 }
 void loop() {
     uint32_t now=millis();

@@ -4,6 +4,8 @@
 #include <esp_wifi.h>
 #include <esp_sntp.h>
 #include <esp_wpa2.h>
+#include <esp_system.h>
+#include <lwip/tcpip.h>
 #include <mbedtls/ssl.h>
 #include <mbedtls/sha256.h>
 #include <Preferences.h>
@@ -31,6 +33,25 @@ unsigned cardAttempts=0;
 unsigned networkRetries=0;
 bool usingSavedLogin=false;
 uint32_t retryAt=0;
+std::atomic<bool> linkDown{true};
+
+// Breadcrumbs that survive a watchdog reset, reported by `wifi diag`.
+constexpr uint32_t stageMagic=0x4d524d00; // "MRM"
+RTC_NOINIT_ATTR uint32_t rtcStage;
+uint32_t stageBeforeReset;
+void stage(uint8_t s) { rtcStage=stageMagic|s; }
+
+// This SDK builds lwIP without core locking. SNTP must only be touched from
+// the tcpip thread, otherwise its timers can corrupt and hang the stack.
+void sntpStart(void *) {
+    if (sntp_enabled()) sntp_stop();
+    sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    sntp_setservername(0,(char*)"ntp.aliyun.com");
+    sntp_setservername(1,(char*)"time.cloudflare.com");
+    sntp_setservername(2,(char*)"cn.pool.ntp.org");
+    sntp_init();
+}
+void sntpStop(void *) { if (sntp_enabled()) sntp_stop(); }
 // Session lifetime. Automatic sessions (boot, wake, after a recording, Settings)
 // switch the radio off once network time arrives or after a short cap. Manual
 // sessions from the USB helper stay up until `wifi off`, with a longer cap.
@@ -88,14 +109,20 @@ int checkDates(void *,mbedtls_x509_crt *cert,int depth,uint32_t *flags) {
 }
 void stopRadio(State next) {
     if (WiFi.getMode()!=WIFI_OFF) {
-        if (sntp_enabled()) sntp_stop();
-        esp_wifi_disconnect();
+        stage(1);
+        tcpip_callback(sntpStop,nullptr);
+        // Let the supplicant finish with the link before removing its EAP setup.
+        if (esp_wifi_disconnect()==ESP_OK)
+            for (uint32_t t=millis(); !linkDown.load() && millis()-t<1000;) delay(10);
+        stage(2);
         esp_wifi_sta_wpa2_ent_disable();
         esp_wifi_sta_wpa2_ent_clear_password();
         esp_wifi_sta_wpa2_ent_clear_username();
         esp_wifi_sta_wpa2_ent_clear_identity();
         esp_wifi_sta_wpa2_ent_clear_ca_cert();
+        stage(4);
         WiFi.mode(WIFI_OFF);
+        stage(0);
     }
     state=next;
 }
@@ -110,14 +137,20 @@ bool join(const char *user,const char *pass,const CampusPeer *pinned=nullptr) {
     portEXIT_CRITICAL(&peerLock);
     static const auto listener=WiFi.onEvent([](WiFiEvent_t,WiFiEventInfo_t info){
         reason.store(info.wifi_sta_disconnected.reason);
+        linkDown.store(true);
     },ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
-    (void)listener;
+    static const auto connected=WiFi.onEvent([](WiFiEvent_t,WiFiEventInfo_t){
+        linkDown.store(false);
+    },ARDUINO_EVENT_WIFI_STA_CONNECTED);
+    (void)listener; (void)connected;
+    stage(10);
     WiFi.persistent(false);
     WiFi.setAutoReconnect(false);
     wifi_config_t config{};
     memcpy(config.sta.ssid,ssid,sizeof(ssid));
     config.sta.threshold.authmode=WIFI_AUTH_WPA2_ENTERPRISE;
     reason.store(0); certFlags.store(0);
+    linkDown.store(false); // A connect attempt is in flight from here until the next disconnect event.
     if (!WiFi.mode(WIFI_STA) || esp_wifi_set_storage(WIFI_STORAGE_RAM)!=ESP_OK ||
         esp_wifi_set_config(WIFI_IF_STA,&config)!=ESP_OK ||
         esp_wifi_sta_wpa2_ent_set_identity((uint8_t*)user,u)!=ESP_OK ||
@@ -128,6 +161,7 @@ bool join(const char *user,const char *pass,const CampusPeer *pinned=nullptr) {
         esp_wifi_sta_wpa2_ent_enable()!=ESP_OK || esp_wifi_connect()!=ESP_OK) {
         stopRadio(State::Failed); return false;
     }
+    stage(0);
     state=State::Joining; started=millis(); return true;
 }
 }
@@ -155,7 +189,10 @@ void resumeSavedCampusWifi() {
     bool needTime=time(nullptr)<1704067200;
     if (needTime && !readPeer(peer)) {state=State::WaitingClock; return;}
     CampusLogin login;
-    if (!loadCampusProfile(login)) {state=State::MissingCard; ++cardAttempts; retryAt=millis()+4000; return;}
+    stage(20);
+    const bool loaded=loadCampusProfile(login);
+    stage(0);
+    if (!loaded) {state=State::MissingCard; ++cardAttempts; retryAt=millis()+4000; return;}
     cardAttempts=0;
     usingSavedLogin=true;
     join(login.user,login.password,needTime?&peer:nullptr);
@@ -183,7 +220,7 @@ bool serviceCampusWifi() {
                 sessionTimeAt.store(millis()|1);
                 clockUpdated.store(true);
             });
-            configTzTime("CST-8","ntp.aliyun.com","time.cloudflare.com","cn.pool.ntp.org");
+            tcpip_callback(sntpStart,nullptr); // TZ is set in setup().
             if (savePending) saveFailed=!saveCampusProfile(pending);
             pending.clear(); savePending=false; return true;
         }
@@ -219,6 +256,12 @@ bool serviceCampusWifi() {
     return clockUpdated.exchange(false);
 }
 void campusCommand(char *cmd,Print &out) {
+    if (!strcmp(cmd,"diag")) {
+        // Stage codes: 1, 2, 4 stopping the radio, 10 configuring a join, 20 reading the card profile.
+        out.printf("wifi diag reset=%d stage_before_reset=%lu\n",int(esp_reset_reason()),
+                   (unsigned long)stageBeforeReset);
+        return;
+    }
     if (!strcmp(cmd,"clock")) {
         out.printf("wifi clock ntp=%lu now=%lu cold_sync=%u\n",(unsigned long)campusNetworkTime(),(unsigned long)time(nullptr),unsigned(bootstrappedClock));
         return;
@@ -265,6 +308,11 @@ void campusCommand(char *cmd,Print &out) {
         out.println("wifi pi unreachable"); return;
     }
     out.println("wifi error command");
+}
+void beginCampusDiagnostics() {
+    const bool valid=(rtcStage&0xffffff00u)==stageMagic && esp_reset_reason()!=ESP_RST_POWERON;
+    stageBeforeReset=valid?(rtcStage&0xff):0;
+    stage(0);
 }
 void startSavedCampusWifi(bool manual) {
     const bool active=campusOnline() || state==State::Joining || state==State::ClockOnly;

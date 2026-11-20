@@ -80,7 +80,7 @@ The helper finds Murmur by USB ID and sets its clock. On first use, enter the ca
 
 Leave the original TF card inserted for standalone login. An online session triggers SNTP. Settings → Clock shows network time status. The serial command `wifi clock` reports the last SNTP update and whether the board used the cold-start recovery path this boot. If recovery cannot authenticate the stored certificate or reach a time server, Settings → Clock and the USB helper can supply the date. If the card was missing, insert it and select Settings → Wi-Fi to retry. Updating the application partition preserves the NVS key and card files.
 
-Over USB, `wifi profile` reports whether the device has a saved key, `wifi status` reports the connection state, and `wifi off` ends the session. `wifi forget` disconnects and removes the active key from NVS. An encrypted file can remain on the card. Provision again to create a fresh key.
+Over USB, `wifi profile` reports whether the device has a saved key, `wifi status` reports the connection state, and `wifi off` ends the session. `wifi forget` disconnects and removes the active key from NVS. `wifi diag` prints the last reset reason and, after a watchdog reset, the Wi-Fi step that was running (1–2, 4: switching the radio off; 10: configuring a login; 20: reading the profile from the card). An encrypted file can remain on the card. Provision again to create a fresh key.
 
 ## Risks to check early
 
