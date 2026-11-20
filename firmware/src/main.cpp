@@ -668,10 +668,15 @@ void render() {
         break;
     }
     case Screen::Error: {
-        icon(pageLayer,Icon::Warn,44,98,40,red);
+        if (!strcmp(faultEn,"Battery too low")) {
+            // Large battery (the header glyph at 3x): outline, terminal and a sliver of charge.
+            box(90,47,54,32,bg,8,red,4);
+            box(146,59,5,12,red,2);
+            box(98,55,max(3,battery*38/100),16,red,3);
+        } else icon(pageLayer,Icon::Warn,44,98,40,red);
         center(94,tr(faultZh,faultEn),18);
         const char *detailZh="本次录音未保存。", *detailEn="This recording wasn't saved.";
-        if (!strcmp(faultEn,"Battery too low")) { detailZh="请先充电再录音。"; detailEn="Charge the device to record."; }
+        if (!strcmp(faultEn,"Battery too low")) { detailZh="请先充电再录音。\n现在录音可能损坏文件。"; detailEn="Charge the device to record.\nRecording now could damage the file."; }
         else if (!strcmp(faultEn,"Task save failed") || !strcmp(faultEn,"Discard failed. Check SD.")) detailZh=detailEn="";
         if (*detailEn) center(124,tr(detailZh,detailEn),14,muted);
         center(212,tr("按 OK 关闭","OK to dismiss"),13,muted);

@@ -69,6 +69,38 @@ Finish any file copy before starting a recording. Pressing PLUS gives the record
 
 Provision HKUSTGZ once with the [USB campus login helper](../docs/campus-wifi.md#getting-credentials-onto-the-device). Online sessions automatically synchronize network time. After a fully dated login the device remembers the campus server certificate and can recover time following a cold shutdown, then reconnect with full date validation. Settings → Clock and USB provide a fallback after a certificate change. Recording and task controls work offline. Automatic Pi upload, transcription, Obsidian synchronization and date-based task scheduling are pending. The Claude page shows its empty state. Sleep currently turns off the backlight.
 
+## Display and UI development
+
+The panel is driven over SPI with DMA (`esp_lcd`) from two 40-line buffers, so LVGL draws the next strip while the previous one is sent. LVGL refreshes every 15 ms. Send `perf` over USB serial to read the measured frame rate and the slowest main-loop pass since the last `perf`.
+
+Check UI changes in the host simulator before flashing: it runs the real `src/main.cpp` with the real fonts and writes screenshots and animation frames. See [sim/README.md](sim/README.md).
+
+```sh
+firmware/sim/build.sh
+mkdir -p work/sim/out && work/sim/murmur-sim firmware/sim/scenes/tour.txt work/sim/out
+```
+
+Icons are the prototype's SVG strokes, rasterized into `src/icons_data.cpp` by `python3 firmware/tools/gen_icons.py`. Add an icon or size there, then regenerate.
+
+## Source layout
+
+| File | Responsibility |
+|---|---|
+| `src/main.cpp` | Screens, navigation, keys and touch |
+| `src/ui_kit.*` | Palette, drawing primitives and motion (prototype timings) |
+| `src/tasks.*` | Task list and lock-screen notes. Sample data for now; the Pi sync replaces it here |
+| `src/icons.*`, `src/icons_data.cpp` | Generated stroke icons |
+| `src/board.*` | Display, backlight, touch, buttons, battery |
+| `src/audio.*` | Microphone capture task and WAV writer |
+| `src/card_usb.*` | TF card sharing between recorder and USB reader |
+| `src/campus_wifi.*`, `src/campus_profile.*` | HKUSTGZ login, saved profile, clock recovery |
+
+## Known limitations
+
+- **Pi sync is not implemented.** Sync now shows a toast, the header counts local changes as waiting, and the Claude page shows its empty state.
+- **Sleep only turns off the backlight.** Wi-Fi sessions end by themselves, but the CPU keeps running.
+- **Arduino-ESP32 2.0.17 (ESP-IDF 4.4).** Its SDK has no public setter for the RADIUS server name, so `tools/campus_tls.py` renames a symbol in the prebuilt supplicant and `-Wl,--wrap=eap_sm_allowMethod` restricts the outer method to PEAP. Moving to Arduino-ESP32 3.x (ESP-IDF 5) would replace both with `esp_eap_client_set_domain_name()`. It also changes the I2S, TinyUSB and Wi-Fi APIs this firmware uses. That move needs a hardware session to verify USB mounting and campus login, so it has not been made blind. The build fails loudly (`Supplicant TLS setup hook missing`) if the patch stops applying.
+
 ## Fonts
 
 The firmware reads the 4-bit antialiased glyphs directly from flash. The Chinese faces at 13, 14, 17, 18 and 20 px include all 3,500 level-one characters from the 2013 Table of General Standard Chinese Characters. The pack also includes punctuation, prototype text, Inter for Latin and JetBrains Mono for the recording timer. It occupies 2,714,917 bytes including metrics and indexes. Each application slot is 7 MiB. The UI and its card errors work without a font file on the card.
