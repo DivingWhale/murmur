@@ -63,7 +63,9 @@ Rules:
 - **Always validate the server**, with both the CA and the server name. Skipping validation lets anyone with a fake access point collect the owner's university password.
 - **Cold-start time recovery.** A fully dated, successful login stores the exact SHA-256 leaf fingerprint and the date it was checked in NVS. With the clock unset, the supplicant can establish a time-only session using that exact pin, the configured CA chain, DNS name, and the remembered date. Present-day expiry is unknown during this step. A changed certificate or missing pin requires trusted time from the owner. On receiving SNTP time, the handheld disconnects and repeats PEAP with full current-date checks before exposing the connection to normal application traffic.
 - **The development unit splits the profile across two media.** The internal NVS holds a random 256-bit key. The TF card holds an AES-GCM encrypted and authenticated copy of the campus username and password. This development setup uses no eFuse. Someone with both the card and an image of internal flash can recover the credentials.
-- **Connect only after a recording or on wake, then turn Wi-Fi off** (`docs/product-design.md`). An enterprise login takes a few seconds, so allow up to about 15 s before treating it as a failure.
+- **Connect only after a recording or on wake, then turn Wi-Fi off** (`docs/product-design.md`). An enterprise login takes a few seconds, so allow up to about 15 s before treating it as a failure. The firmware gives up joining after 30 s.
+  - *Automatic sessions* start at boot, after a recording is saved, from Settings → Wi-Fi, and on wake. Wake only connects if the clock is unset or the last session was more than 30 minutes ago. The radio switches off 2 s after network time arrives, or 20 s after DHCP, whichever comes first. The Pi upload will run inside this window once it exists.
+  - *Manual sessions* (`wifi join`, `wifi save`, `wifi connect` over USB) stay up until `wifi off`, for at most 5 minutes, so the helper can probe the Pi.
 
 ## Getting credentials onto the device
 
@@ -84,7 +86,24 @@ The helper finds Murmur by USB ID and sets its clock. On first use, enter the ca
 
 Leave the original TF card inserted for standalone login. An online session triggers SNTP. Settings → Clock shows network time status. The serial command `wifi clock` reports the last SNTP update and whether the board used the cold-start recovery path this boot. If recovery cannot authenticate the stored certificate or reach a time server, Settings → Clock and the USB helper can supply the date. If the card was missing, insert it and select Settings → Wi-Fi to retry. Updating the application partition preserves the NVS key and card files.
 
-Over USB, `wifi profile` reports whether the device has a saved key, `wifi status` reports the connection state, and `wifi off` ends the session. `wifi forget` disconnects and removes the active key from NVS. An encrypted file can remain on the card. Provision again to create a fresh key.
+Over USB, `wifi profile` reports whether the device has a saved key, `wifi status` reports the connection state, and `wifi off` ends the session. `wifi forget` disconnects and removes the active key from NVS. An encrypted file can remain on the card. Provision again to create a fresh key. `wifi auto` starts the same self-ending session as Settings → Wi-Fi.
+
+### Diagnosing a hang
+
+A hung main loop reboots the handheld after 15 s (task watchdog). Afterwards, `wifi diag` prints `reset=<esp_reset_reason> loop_phase=<n> wifi_step=<n>` from breadcrumbs kept in RTC memory. A power-on reset clears them.
+
+| `loop_phase` | Main loop was in | `wifi_step` | Wi-Fi code was |
+|---|---|---|---|
+| 1 | recording service | 1 | stopping SNTP and disconnecting |
+| 2 | buttons | 2 | removing the EAP configuration |
+| 3 | touch | 4 | switching the radio off (`WiFi.mode(WIFI_OFF)`) |
+| 4 | serial commands | 10 | configuring and starting a login |
+| 5 | Wi-Fi service | 20 | reading the saved profile from the card |
+| 6 | screen update | 0 | none of the above |
+| 7 | LVGL timers | | |
+| 8 | idle delay | | |
+
+To reproduce a hang, run `work/venv/bin/python firmware/tools/wifi_stress.py` (Windows: `.\work\venv\Scripts\python.exe`). It cycles automatic, manual and interrupted sessions, and prints `wifi diag` if the device reboots.
 
 ## Risks to check early
 

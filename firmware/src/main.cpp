@@ -7,6 +7,7 @@
 #include <USB.h>
 #include "fonts.h"
 #include <Preferences.h>
+#include <esp_task_wdt.h>
 #include <sys/time.h>
 #include <time.h>
 
@@ -117,6 +118,7 @@ void go(Screen target) {
         settlePage(pageIndex(target));
         return;
     }
+    const bool waking=screen==Screen::Sleep && target!=Screen::Sleep && target!=Screen::Recording;
     if (target==Screen::Panel) pageMotion=screen==Screen::Settings?Motion::Right:Motion::Down;
     else if (screen==Screen::Panel) pageMotion=target==Screen::Settings?Motion::Left:Motion::Up;
     else if (screen==Screen::Lock && target==Screen::Today) pageMotion=Motion::Up;
@@ -124,6 +126,7 @@ void go(Screen target) {
     lastInput=entered=interacted=rotated=millis();
     dirty=true;
     setBacklight(target==Screen::Sleep?0:brightness*5);
+    if (waking) startCampusWifiOnWake();
 }
 void showError(const char *zh,const char *english) {
     faultZh=zh; faultEn=english; go(Screen::Error);
@@ -137,7 +140,8 @@ void audioError(AudioResult r) {
 void recordKey() {
     if (recordingActive()) {
         auto result=finishRecording();
-        if (result==AudioResult::Ok) go(Screen::Saved); else audioError(result);
+        if (result==AudioResult::Ok) { go(Screen::Saved); startSavedCampusWifi(); } // Upload point once the Pi sync exists.
+        else audioError(result);
         return;
     }
     sleepAfter=screen==Screen::Sleep;
@@ -1059,6 +1063,7 @@ void serialSettings() {
 }
 
 void setup() {
+    beginCampusDiagnostics();
     boardBegin();
     static lv_indev_drv_t touchDriver;
     lv_indev_drv_init(&touchDriver);
@@ -1086,14 +1091,21 @@ void setup() {
     for (auto &k:keys) { k.used=k.down=k.raw=(digitalRead(k.pin)==LOW); }
     go(Screen::Lock);
     startSavedCampusWifi();
+    // A hung loop otherwise needs a power cut: the PWR gesture runs in loop().
+    // Reboot instead. `wifi diag` then reports where Wi-Fi code was.
+    esp_task_wdt_init(15,true);
+    enableLoopWDT();
 }
 void loop() {
     uint32_t now=millis();
     lv_tick_inc(now-lastTick); lastTick=now;
+    // Breadcrumb codes for `wifi diag`: see docs/campus-wifi.md.
+    diagLoopPhase(1);
     if (recordingActive()) {
         auto result=serviceRecording();
         if (result!=AudioResult::Ok) audioError(result);
     }
+    diagLoopPhase(2);
     pollKeys(now);
     if (screen==Screen::ReleasePower || screen==Screen::UnplugPower) {
         if (dirty) render();
@@ -1102,13 +1114,19 @@ void loop() {
         return;
     }
     now=millis();
+    diagLoopPhase(3);
     pollTouch(now);
+    diagLoopPhase(4);
     serialSettings();
+    diagLoopPhase(5);
     if (serviceCampusWifi()) {
         refreshClock();
         if (screen==Screen::Settings || screen==Screen::Panel || screen==Screen::SetClock) dirty=true;
     }
+    diagLoopPhase(6);
     updateView(millis());
+    diagLoopPhase(7);
     lv_timer_handler();
+    diagLoopPhase(8);
     delay(screen==Screen::Sleep?10:2);
 }
