@@ -1,0 +1,36 @@
+# Transition films, one contact sheet each (a frame every 30 ms).
+serial en
+wait 600
+press ok
+wait 600
+swipe 120 6 120 120 100
+wait 500
+film panel-close 330 30
+swipe 120 150 120 60 80
+wait 500
+swipe 120 6 120 120 100
+wait 500
+film settings-push 330 30
+tap 120 200
+wait 600
+film brightness-push 330 30
+tap 120 200
+wait 400
+tap 120 200
+wait 600
+film brightness-pop 330 30
+tap 20 16
+wait 600
+tap 20 16
+wait 400
+swipe 120 120 120 20 100
+wait 600
+film strip-browse 330 30
+swipe 200 205 60 205 100
+wait 600
+film page-drag 500 30
+touch 200 100
+move 120 100 120
+move 150 100 80
+lift
+wait 400

@@ -900,10 +900,15 @@ void gesture(int x,int y,int dx,int dy) {
         if (pos>=0 && pos%layout::rowPitch<layout::rowHeight && pos/layout::rowPitch<n) { focused=pos/layout::rowPitch; shortKey(okPin); }
     }
 }
+void setBrightnessFromTouch(int x) {
+    const Rect &bar=screen==Screen::Panel?layout::panelBrightness:layout::screenBrightness;
+    setBrightnessLevel(((x-bar.x)*20+bar.w-1)/bar.w);
+}
 void pollTouch(uint32_t now) {
     static uint32_t polled,lastSeen;
     static int startX,startY,x,y;
     static bool tracking,listTouch,slider,moved;
+    static int sliderStart; // Brightness when the touch began, restored if it turns into a swipe up.
     static bool pageTouch,verticalDrag;
     static int trackStart;
     static Screen from;
@@ -925,6 +930,7 @@ void pollTouch(uint32_t now) {
                 trackStart=lv_obj_get_style_x(pageTrack,0);
                 draggingPages=lv_anim_del(pageTrack,positionTrack);
             }
+            sliderStart=brightness;
             slider=(screen==Screen::Panel && layout::panelBrightness.contains(tx,ty)) ||
                    (screen==Screen::Brightness && layout::screenBrightness.contains(tx,ty));
             moved=screen==Screen::Settings && settingsList && lv_obj_is_scrolling(settingsList);
@@ -948,10 +954,9 @@ void pollTouch(uint32_t now) {
             }
         }
         if (abs(x-startX)>=6 || abs(y-startY)>=6) moved=true;
-        if (slider && screen==from) {
-            const Rect &bar=screen==Screen::Panel?layout::panelBrightness:layout::screenBrightness;
-            setBrightnessLevel(((x-bar.x)*20+bar.w-1)/bar.w);
-        }
+        // The bar follows a sideways drag. A touch that is still at rest, or moving mostly
+        // vertically, may become a tap or a swipe up, so it waits (no backlight flash).
+        if (slider && screen==from && abs(x-startX)>=6 && abs(x-startX)>=abs(y-startY)) setBrightnessFromTouch(x);
     } else if (tracking && (state==Contact::Released || now-lastSeen>100)) {
         tracking=settingsTouch=false;
         if (from!=screen) return;
@@ -967,7 +972,17 @@ void pollTouch(uint32_t now) {
             return;
         }
         if (recordingActive() && (state!=Contact::Released || moved)) return;
-        if (slider) { storeBrightness(); return; }
+        if (slider) {
+            if (!moved) setBrightnessFromTouch(x); // A tap sets the level where it landed.
+            // A swipe up that began on the panel's bar closes the panel (§4.11) instead of setting brightness.
+            if (screen==Screen::Panel && startY-y>=30 && startY-y>abs(x-startX)) {
+                setBrightnessLevel(sliderStart);
+                go(panelFrom);
+                return;
+            }
+            storeBrightness();
+            return;
+        }
         if (screen==Screen::Settings && moved && !(x-startX>=40 && x-startX>abs(y-startY))) return;
         if (listTouch && moved && abs(x-startX)<=max(12,abs(y-startY))) return;
         if (verticalDrag && abs(x-startX)>abs(y-startY)) return;

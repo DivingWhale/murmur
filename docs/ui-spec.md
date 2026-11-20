@@ -158,7 +158,7 @@ Not every feature needs a button. Only frequent actions are on keys. Pages are r
 
 ### 4.11 Quick panel (swipe down)
 - **Open:** swipe down (≥ 30 px) starting in the top 32 px (header band) of Today or a page. It slides down (0.28 s).
-- **Close:** swipe up (≥ 30 px), press OK or NEXT, or hold OK. Closing returns to the screen it was opened from.
+- **Close:** swipe up (≥ 30 px), press OK or NEXT, or hold OK. Closing returns to the screen it was opened from. A swipe up that starts on the brightness bar also closes the panel and leaves the brightness unchanged; the bar only follows sideways drags and taps.
 - **Layout** (10px padding, 8px gaps, background `#121418`):
   1. **Status row (24px):** Wi-Fi icon (or Wi-Fi-off), network name (SSID), and `Synced 10:40` / `已同步 10:40` or `Offline` / `离线`. A manual Wi-Fi session with no sync result shows the SSID and `Online` / `在线` after DHCP.
   2. **Two tiles (66px each, 12px radius):**
