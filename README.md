@@ -9,7 +9,7 @@ Press a button, say what you want to remember, and put the device back in your p
 | If you are working on… | Read |
 |---|---|
 | Anything | [docs/product-design.md](docs/product-design.md): what the system does and why |
-| USB serial, TF card access or post-flash mounting | [USB startup sequence and hardware regression check](docs/product-design.md#usb-access-to-the-tf-card) |
+| USB serial, TF card access or post-flash mounting | [USB behaviour](docs/product-design.md#usb-access-to-the-tf-card) and [hardware tests](firmware/TESTING.md) |
 | Handheld UI / firmware | [docs/ui-spec.md](docs/ui-spec.md): **source of truth** for screens, controls, sizes and text |
 | Build or flash the handheld preview | [firmware/README.md](firmware/README.md) |
 | Lock-screen notes (computer ↔ Pi ↔ handheld) | [docs/lockscreen-api.md](docs/lockscreen-api.md) |
@@ -29,6 +29,7 @@ prototype/
   index.html            interactive UI prototype (reference only)
   api/v1/               mock API responses used by the prototype
 firmware/               ESP32-S3 firmware, fonts and CLI build entry point
+  TESTING.md            hardware test procedures and log
 ```
 
 ## Run the prototype

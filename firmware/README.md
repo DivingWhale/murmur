@@ -6,15 +6,27 @@ This image targets the **Waveshare ESP32-S3-Touch-LCD-1.54**, with the 240 × 24
 
 From the repository root, using Python 3.11:
 
-```powershell
-python firmware/tools/build.py
+```sh
+python3 firmware/tools/build.py      # macOS / Linux
+python firmware/tools/build.py       # Windows
 ```
 
 The first build downloads PlatformIO, the ESP32-S3 cross compiler, Arduino-ESP32 and LVGL. The builder keeps the virtual environment, compiler, caches and scratch files under `work/`. PlatformIO keeps the project libraries and objects under `firmware/.pio/`. The merged image is `firmware/build/murmur-handheld.bin`. Git ignores all three directories. The checked-in application font pack is an input to the build.
 
 ## Flash and try it
 
-Plug the board into USB. These commands run from the repository root in PowerShell. List serial ports first, then substitute the board's port for `COM7`.
+Plug the board into USB. These commands run from the repository root. List serial ports first, then substitute the board's port.
+
+On macOS or Linux (the port looks like `/dev/cu.usbmodem1101` on macOS):
+
+```sh
+py=work/venv/bin/python
+tool=work/pio/packages/tool-esptoolpy/esptool.py
+$py -m serial.tools.list_ports -v
+$py $tool --chip esp32s3 --port /dev/cu.usbmodem1101 write_flash 0x0 firmware/build/murmur-handheld.bin
+```
+
+On Windows, in PowerShell, substitute the board's port for `COM7`:
 
 ```powershell
 .\work\venv\Scripts\python.exe -m serial.tools.list_ports -v
@@ -23,7 +35,7 @@ $tool = '.\work\pio\packages\tool-esptoolpy\esptool.py'
 & $py $tool --chip esp32s3 --port COM7 write_flash 0x0 .\firmware\build\murmur-handheld.bin
 ```
 
-The merged image includes the bootloader and partition table. Flashing it replaces the factory application and may clear device settings. To keep a copy of the current 16 MiB flash, run the following before writing:
+The merged image includes the bootloader and partition table. Flashing it replaces the factory application and may clear device settings. To keep a copy of the current 16 MiB flash, run the following before writing (on macOS, the same arguments with `$py $tool` and your `/dev/cu.*` port):
 
 ```powershell
 & $py $tool --chip esp32s3 --port COM7 read_flash 0x0 0x1000000 .\work\original-flash.bin
@@ -31,7 +43,7 @@ The merged image includes the bootloader and partition table. Flashing it replac
 
 The application uses Espressif's CDC + MSC development ID (`303A:4003`). The ROM loader uses `303A:1001`. Windows can assign each mode a different COM number. [Espressif USB descriptors](https://github.com/espressif/esp-usb/blob/master/device/esp_tinyusb/usb_descriptors.c)
 
-The USB reader initially reports an empty slot. After USB configuration it waits at least four seconds before publishing the card. A background task probes the card when the host polls, so SD initialization and status checks do not run in the USB readiness or capacity callbacks. On the test PC, Windows mounted the volume about 22 seconds after the application COM port appeared. Leave the cable connected during this interval.
+The USB reader initially reports an empty slot. After USB configuration it waits at least four seconds before publishing the card. A background task probes the card when the host polls, so SD initialization and status checks do not run in the USB readiness or capacity callbacks. On the test PC, Windows mounted the volume about 22 seconds after the application COM port appeared. Leave the cable connected during this interval. USB mounting has not yet been tested on macOS. See [TESTING.md](TESTING.md) for update checks and the hardware log.
 
 If Windows loses USB and the Murmur interface still responds, hold PWR for three seconds, release it at the prompt, and unplug USB. Leave the battery installed. Reconnect USB with BOOT released to start the application again. The PWR gesture runs in Murmur firmware and is available while the application is responsive. The ROM download mode has its own recovery procedure. [Waveshare USB download instructions](https://docs.waveshare.com/ESP32-S3-Touch-LCD-1.54/Instructions-For-Use)
 
