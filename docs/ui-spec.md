@@ -8,6 +8,7 @@ This is the UI spec for the handheld firmware. Read it **before** writing any UI
 | `docs/ui-spec.md` | **This spec.** |
 | `prototype/index.html` | Interactive reference prototype. Run `cd prototype && python3 -m http.server 8080`, then open `http://localhost:8080`. The *Screen states* section shows every screen at actual pixel size. |
 | `docs/lockscreen-api.md` | API for the lock-screen notes (Pi ↔ computer ↔ handheld). |
+| `docs/claude-usage-api.md` | Data for the Claude usage page. |
 | `prototype/api/v1/lockscreen.json` | Mock response for that API. |
 
 ---
@@ -67,10 +68,13 @@ Coordinates are from the screen's top-left corner. The prototype has an exact ex
   - Right, right-aligned and stacked: the battery indicator, with the date under it (`Wed 18 Nov` / `11月18日 周三`).
 - **Note:** the excerpt of one lock-screen note, starting 10px below the header.
 - **Recording time** under the note: the exact time it was recorded, `15 Nov · 09:22` / `11月15日 09:22`. Use the wall-clock time from `recorded_at` as written; don't convert time zones. Notes have **no title**.
-- **Footer** (10px from the bottom): position dots on the left (only if there is more than one note) and the hint `OK unlock · + record` / `OK 解锁 · + 录音` on the right.
+- **Footer** (10px from the bottom): position dots on the left (only if there is more than one note) and the hint `OK/↑ unlock · + record` / `OK/上滑 解锁 · + 录音` on the right.
 - **No notes:** show `No notes chosen yet. Pick Miscellaneous notes on your computer.` / `还没有选择笔记。请在电脑上挑选随记。`
 - **Rotation:** move to the next note every `interval_s` seconds (default 6).
-- **Touch is ignored** on this screen, so it does nothing in a pocket.
+- **Touch:** only deliberate swipes count, and taps are ignored (pocket safety).
+  - **Swipe left/right** of ≥ 24 px (≈ 2.8 mm) shows the next/previous note (slides in, 0.28 s) and restarts the rotation timer.
+  - **Swipe up** of ≥ 60 px (≈ 7 mm, a quarter of the screen) unlocks. Today rises into place (40 px, 0.3 s).
+  - Pages (§4.10) can't be opened from here.
 
 ### 4.2 Today
 - **Header (32px tall):**
@@ -129,6 +133,25 @@ While a button is held (§5), a dark overlay (black at 72%) covers the screen, s
 - **Lock:** padlock icon, `Lock` / `锁屏`.
 - **Sleep:** moon icon, `Sleep` / `休眠`.
 
+### 4.10 Pages (touch only)
+Not every feature needs a button. Only frequent actions are on keys. Pages are reached **only by touch**:
+
+- **Navigation:** on Today, swipe left or right anywhere except the bottom line to move Today ↔ **Claude** ↔ **MD**. The bottom line keeps its own swipe for browsing tasks. Each page change slides in (0.26 s).
+- **Page layout:**
+  - Header: the page title on the left, battery on the right (same as Today).
+  - Footer (data pages only), 10px from the bottom: `Updated HH:MM` / `更新于 HH:MM`. No page dots.
+- **Edge bounce:** swiping right on Today (first page) or left on MD (last page) nudges the screen 14px toward the swipe, overshoots 4px back, then settles (0.34 s). That shows there are no more pages.
+- **Claude page:** two blocks, 16px apart. Data comes from `docs/claude-usage-api.md`.
+  - **Labels:** `5-HOUR` / `5 小时` and `WEEK` / `本周`. Label style as in §3, with the percentage right-aligned at 30px bold, using fixed-width digits.
+  - **Bar:** 8px tall, rounded, with an empty track of `#2A2D33`.
+  - **Reset line:** `Resets 14:30 · in 3 h 50 m` / `14:30 重置 · 3 小时 50 分后`. For the week, the weekday goes before the time (`Mon 09:00` / `周一 09:00`).
+  - **Colour:** the percentage and bar use text colour, due colour at ≥ 80%, and rec colour at ≥ 95%.
+  - **No data:** `No usage data yet` / `暂无用量数据`.
+- **MD page:** a placeholder for now. Show an atom icon, `Coming soon` / `即将上线`, and `Simulation progress will show here.` / `模拟进度将显示在这里。`
+- **Keys on a page:** PLUS records. OK or NEXT press returns to Today. Hold OK goes to Lock. Hold NEXT sleeps.
+- **Lock screen:** taps are ignored and pages can't be opened from it. Only its own swipes (notes, unlock) work.
+- **Freshness:** page data refreshes only when the device syncs. That's why every data page shows when it was last updated.
+
 ## 5. Controls
 
 **There is no double-press anywhere.** A press acts **on release**. A hold acts at **800 ms**. The overlay appears at 250 ms, so the user can see what will happen and release early to cancel.
@@ -136,15 +159,16 @@ While a button is held (§5), a dark overlay (black at 72%) covers the screen, s
 | Mode | PLUS | NEXT press | NEXT hold | OK press | OK hold | Touch |
 |---|---|---|---|---|---|---|
 | Sleep | Wake **and start recording** | Wake to Lock | — | — | — | Ignored |
-| Lock | Start recording | Next note | Sleep | Unlock to Today | Sleep | Ignored |
-| Today | Start recording | Move highlight: task 1 → … → task n → bottom line → task 1 | Sleep | Task: check off or undo. Bottom line: open picker | Go to Lock | Tap a task: check it off. Tap the bottom line: open picker. Swipe the bottom line left/right: next/previous task (highlights the line and pauses rotation) |
+| Lock | Start recording | Next note | Sleep | Unlock to Today | Sleep | Swipe left/right (≥ 24 px): next/previous note. Swipe up (≥ 60 px): unlock. Taps ignored |
+| Today | Start recording | Move highlight: task 1 → … → task n → bottom line → task 1 | Sleep | Task: check off or undo. Bottom line: open picker | Go to Lock | Tap a task: check it off. Tap the bottom line: open picker. Swipe the bottom line left/right: next/previous task (highlights the line and pauses rotation). **Swipe elsewhere: pages (§4.10)** |
 | Picker | Start recording (closes picker) | Next task | — | Move the task shown into Today | Back to Today (highlight stays on the bottom line) | Swipe: next/previous. Cancel/Move buttons |
 | Recording | Stop and save | — | — | — | — | — |
 | Saved, Syncing | Start recording (pauses the sync) | — | — | — | — | — |
 | Error | Start recording (if possible) | — | — | Dismiss | — | — |
+| Page (Claude, MD) | Start recording | Back to Today | Sleep | Back to Today | Lock | Swipe left/right: next/previous page. Taps do nothing |
 
 - **What a hold of OK does:** go back one level, from the picker to Today, from Today to Lock, and from Lock to Sleep.
-- **Swipe:** a horizontal movement of more than about 20 px that is larger than the vertical movement. A swipe must never also count as a tap.
+- **Swipe:** a horizontal movement of more than 12 device px that is larger than the vertical movement (lock screen: 24 px sideways, 60 px up). A swipe must never also count as a tap.
 - **Bottom line timeout:** if the bottom line stays highlighted for 10 s with no input, the highlight returns to task 1 and the rotation resumes.
 - **Recording from sleep:** if a recording was started from Sleep, return to Sleep once its save and sync (or the offline fallback) have finished.
 

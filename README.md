@@ -11,6 +11,7 @@ Press a button, say what you want to remember, and put the device back in your p
 | Anything | [docs/product-design.md](docs/product-design.md): what the system does and why |
 | Handheld UI / firmware | [docs/ui-spec.md](docs/ui-spec.md): **source of truth** for screens, controls, sizes and text |
 | Lock-screen notes (computer ↔ Pi ↔ handheld) | [docs/lockscreen-api.md](docs/lockscreen-api.md) |
+| Claude usage page (5-hour / weekly limits) | [docs/claude-usage-api.md](docs/claude-usage-api.md) |
 
 ## Repository layout
 
@@ -19,9 +20,10 @@ docs/
   product-design.md     system design (version 1)
   ui-spec.md            handheld UI implementation spec
   lockscreen-api.md     lock-screen notes API contract
+  claude-usage-api.md   Claude usage page data contract
 prototype/
   index.html            interactive UI prototype (reference only)
-  api/v1/lockscreen.json  mock API response used by the prototype
+  api/v1/               mock API responses used by the prototype
 firmware/               (to be added) ESP32-S3 firmware
 ```
 

@@ -35,6 +35,14 @@ h2{font-size:18px;margin:56px 0 4px}
 /* container-type ignores content width, so the wrapper needs an explicit width matching .zoom */
 .swrap{position:relative;container-type:inline-size;width:480px;height:480px}
 .swrap.real{width:27.7mm;height:27.7mm}
+/* simulated finger: click = tap, drag = swipe. Dot ≈ 6.5 mm on the real panel */
+#touchFx{position:absolute;inset:0;pointer-events:none;overflow:hidden;border-radius:6px}
+.tdot{position:absolute;width:14cqw;height:14cqw;margin:-7cqw 0 0 -7cqw;border-radius:50%;background:rgba(255,255,255,.22);border:2px solid rgba(255,255,255,.65);transition:opacity .35s,transform .35s}
+.tdot.up{opacity:0;transform:scale(1.35)}
+.tdot.ign{border-color:rgba(255,92,77,.8);background:rgba(255,92,77,.18)}
+.ttrail{position:absolute;height:1.6cqw;margin-top:-.8cqw;border-radius:1cqw;background:rgba(255,255,255,.28);transform-origin:0 50%;transition:opacity .35s}
+.zoom{cursor:pointer}
+.thint{font-size:12px;color:var(--ink2);margin-top:-10px}
 #holdOv{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.72);border-radius:6px;color:#F4F3EF;font-family:var(--s-font);font-weight:700;font-size:8cqw;pointer-events:none}
 #holdOv.on{display:flex}
 .hob{display:flex;flex-direction:column;align-items:center;gap:.3em}
@@ -141,6 +149,44 @@ h2{font-size:18px;margin:56px 0 4px}
 .lkm{margin:6px 14px 0;font-size:13px;color:var(--s-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lkf{position:absolute;left:14px;right:14px;bottom:10px;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--s-muted)}
 .lkf span:last-child{margin-left:auto}
+/* ---- Pages (touch only: swipe on Today → Claude → MD) ---- */
+.cu{padding:6px 14px 0;display:flex;flex-direction:column;gap:16px}
+.cur{display:flex;justify-content:space-between;align-items:baseline}
+.lb2{font-size:11px;font-weight:700;letter-spacing:.07em;color:var(--s-muted)}
+.scr.zh .lb2{font-size:13px;letter-spacing:.04em}
+.pct{font-size:30px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.bar{height:8px;border-radius:4px;background:#2A2D33;overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;border-radius:4px}
+.cub .me{margin-top:6px;white-space:nowrap}
+.pgf{position:absolute;left:14px;right:14px;bottom:10px;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--s-muted)}
+.scr.zh .pgf{font-size:14px}
+.soon{position:absolute;left:0;right:0;top:32px;bottom:36px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px;color:var(--s-muted);padding:0 18px}
+.soon b{color:var(--s-text);font-size:18px}
+.scr.pg-l{animation:pgL .26s ease-out}.scr.pg-r{animation:pgR .26s ease-out}
+@keyframes pgL{from{transform:translateX(40px);opacity:.2}}
+@keyframes pgR{from{transform:translateX(-40px);opacity:.2}}
+.zoom > .scr.pg-l{animation-name:pgL2}.zoom > .scr.pg-r{animation-name:pgR2}
+@keyframes pgL2{from{transform:scale(2) translateX(40px);opacity:.2}to{transform:scale(2)}}
+@keyframes pgR2{from{transform:scale(2) translateX(-40px);opacity:.2}to{transform:scale(2)}}
+.zoom.real > .scr.pg-l,.zoom.real > .scr.pg-r{animation:none}
+/* edge bounce: swiped past the first/last page → nudge toward the swipe, spring back */
+.lkw.sl-l{animation:slL .28s ease-out}.lkw.sl-r{animation:slR .28s ease-out}
+/* unlock by swipe up: Today rises into place */
+.scr.pg-u{animation:pgU .3s ease-out}
+@keyframes pgU{from{transform:translateY(40px);opacity:.2}}
+.zoom > .scr.pg-u{animation-name:pgU2}
+@keyframes pgU2{from{transform:scale(2) translateY(40px);opacity:.2}to{transform:scale(2)}}
+.zoom.real > .scr.pg-u{animation:pgU3 .3s ease-out}
+@keyframes pgU3{from{transform:scale(.4362) translateY(40px);opacity:.2}to{transform:scale(.4362)}}
+.scr.pg-bl{animation:pgBL .34s ease-out}.scr.pg-br{animation:pgBR .34s ease-out}
+@keyframes pgBL{30%{transform:translateX(-14px)}65%{transform:translateX(4px)}100%{transform:none}}
+@keyframes pgBR{30%{transform:translateX(14px)}65%{transform:translateX(-4px)}100%{transform:none}}
+.zoom > .scr.pg-bl{animation-name:pgBL2}.zoom > .scr.pg-br{animation-name:pgBR2}
+@keyframes pgBL2{0%{transform:scale(2)}30%{transform:scale(2) translateX(-14px)}65%{transform:scale(2) translateX(4px)}100%{transform:scale(2)}}
+@keyframes pgBR2{0%{transform:scale(2)}30%{transform:scale(2) translateX(14px)}65%{transform:scale(2) translateX(-4px)}100%{transform:scale(2)}}
+.zoom.real > .scr.pg-bl{animation:pgBL3 .34s ease-out}.zoom.real > .scr.pg-br{animation:pgBR3 .34s ease-out}
+@keyframes pgBL3{0%{transform:scale(.4362)}30%{transform:scale(.4362) translateX(-14px)}65%{transform:scale(.4362) translateX(4px)}100%{transform:scale(.4362)}}
+@keyframes pgBR3{0%{transform:scale(.4362)}30%{transform:scale(.4362) translateX(14px)}65%{transform:scale(.4362) translateX(-4px)}100%{transform:scale(.4362)}}
 .toast{position:absolute;left:50%;bottom:82px;transform:translateX(-50%);background:var(--s-text);color:var(--s-bg);font-size:14px;font-weight:600;border-radius:999px;padding:5px 12px;white-space:nowrap}
 .full{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:14px}
 .rech{position:absolute;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;font-size:13px;font-weight:700;letter-spacing:.06em}
@@ -204,7 +250,8 @@ h2{font-size:18px;margin:56px 0 4px}
 
   <div class="top">
     <div class="device">
-      <div class="bezel"><div class="swrap"><div class="zoom" id="live"></div><div id="holdOv" aria-live="polite"></div></div></div>
+      <div class="bezel"><div class="swrap"><div class="zoom" id="live"></div><div id="touchFx" aria-hidden="true"></div><div id="holdOv" aria-live="polite"></div></div></div>
+      <div class="thint">Touch: click = tap · drag = swipe</div>
       <div class="hw">
         <div class="hwb"><button id="bNext" aria-label="Next"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>NEXT</div>
         <div class="hwb"><button id="bPlus" class="plus" aria-label="Plus: record"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>PLUS</div>
@@ -219,7 +266,8 @@ h2{font-size:18px;margin:56px 0 4px}
           <dt>PLUS</dt><dd>Start recording right away. Press again to stop and save. Works from any screen, pauses a sync in progress, and <b>wakes the device from sleep straight into recording</b>. After that recording is saved and synced, it goes back to sleep.</dd>
           <dt>NEXT</dt><dd>Press: move the highlight down Today, then onto the When I Have Time line (one stop), then back to the top. <b>In “Move to Today?”:</b> press to see the next When I Have Time task.  <b>Hold 0.8 s:</b> sleep straight away (screen off). <b>While asleep:</b> press to wake to the lock screen.</dd>
           <dt>OK</dt><dd>On a Today task: check it off (or undo). On the When I Have Time line: opens “Move to Today?” for the task shown; press again to move it into Today. <b>Hold 0.8 s: back one level</b> — “Move to Today?” → Today → lock screen → sleep. The screen shows where you’re going; release early to cancel.</dd>
-          <dt>Lock</dt><dd>Cycles through Miscellaneous notes chosen on the computer. OK unlocks, NEXT shows the next note, PLUS records. Touch is ignored so it’s safe in a pocket.</dd>
+          <dt>Lock</dt><dd>Cycles through Miscellaneous notes chosen on the computer. OK unlocks, NEXT shows the next note, PLUS records. <b>Swipe left/right</b> (≥ 24 px ≈ 2.8 mm) to change notes; <b>swipe up</b> (≥ 60 px ≈ 7 mm, a quarter of the screen) to unlock. Taps are ignored, so it stays safe in a pocket.</dd>
+          <dt>Pages</dt><dd><b>Touch only.</b> On Today, swipe left/right (anywhere except the bottom line) for Today → Claude usage → MD simulations. On a page, OK or NEXT returns to Today; hold OK = lock, hold NEXT = sleep, PLUS records.</dd>
           <dt>Touch</dt><dd>Tap a task to check it off. <b>Swipe left/right on the bottom line</b> to browse When I Have Time (the rotation stops; it resumes after 10 s idle). Tapping the bottom line opens “Move to Today?” with large Move and Cancel buttons. It cancels by itself after 8 s, so a stray touch never moves anything.</dd>
         </dl>
       </div>
@@ -297,7 +345,7 @@ const T={
       clear:'All clear',clearSub:'Press + to capture a thought',synced:'Synced',waiting:n=>n+' waiting',rec:'REC',stop:'Press + to stop',
       syncPaused:'Sync paused · ',saved:'Saved',onCard:'on microSD',syncNext:'Syncing next',syncLater:'Will sync when online',syncing:'Syncing',
       steps:['Campus Wi-Fi','Uploaded to Pi','Turning into tasks'],recAny:'Press + to record anytime',full:'Card full',
-      fullSub:'This recording wasn’t saved.<br>Free up space on the microSD card.',dismiss:'OK to dismiss',lockHint:'OK unlock · + record',
+      fullSub:'This recording wasn’t saved.<br>Free up space on the microSD card.',dismiss:'OK to dismiss',lockHint:'OK/↑ unlock · + record',cuTitle:'Claude',cuSession:'5-HOUR',cuWeek:'WEEK',cuResets:(t,i)=>'Resets '+t+' · in '+i,cuUpd:t=>'Updated '+t,cuNone:'No usage data yet',dur:(d,hh,mm)=>d?d+' d '+hh+' h':hh?hh+' h '+mm+' m':mm+' m',wdays:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],mdTitle:'MD simulations',soon:'Coming soon',soonSub:'Simulation progress will show here.',
       noNotes:'No notes chosen yet.<br>Pick Miscellaneous notes on your computer.',
       battLow:'Battery too low',battLowSub:'Charge the device to record.<br>Recording now could damage the file.',noteTime:iso=>{const t=wall(iso);return t?t.d+' '+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][t.m-1]+' · '+t.hm:'';},
       sep:' · ',toast:{task:'+1 task',noteTask:'+1 note · +1 task',tomorrow:'+1 task for tomorrow',synced:'Synced'}},
@@ -307,13 +355,23 @@ const T={
       clear:'全部完成',clearSub:'按 + 记录想法',synced:'已同步',waiting:n=>n+' 项待同步',rec:'录音中',stop:'按 + 停止',
       syncPaused:'同步已暂停 · ',saved:'已保存',onCard:'已存入 microSD',syncNext:'即将同步',syncLater:'联网后同步',syncing:'同步中',
       steps:['连接校园 Wi-Fi','上传到 Pi','整理成任务'],recAny:'随时按 + 录音',full:'存储卡已满',
-      fullSub:'本次录音未保存。<br>请清理 microSD 卡空间。',dismiss:'按 OK 关闭',lockHint:'OK 解锁 · + 录音',
+      fullSub:'本次录音未保存。<br>请清理 microSD 卡空间。',dismiss:'按 OK 关闭',lockHint:'OK/上滑 解锁 · + 录音',cuTitle:'Claude',cuSession:'5 小时',cuWeek:'本周',cuResets:(t,i)=>t+' 重置 · '+i+'后',cuUpd:t=>'更新于 '+t,cuNone:'暂无用量数据',dur:(d,hh,mm)=>d?d+' 天 '+hh+' 小时':hh?hh+' 小时 '+mm+' 分':mm+' 分',wdays:['周日','周一','周二','周三','周四','周五','周六'],mdTitle:'分子动力学',soon:'即将上线',soonSub:'模拟进度将显示在这里。',
       noNotes:'还没有选择笔记。<br>请在电脑上挑选随记。',
       battLow:'电量过低',battLowSub:'请先充电再录音。<br>现在录音可能损坏文件。',noteTime:iso=>{const t=wall(iso);return t?t.m+'月'+t.d+'日 '+t.hm:'';},
       sep:' · ',toast:{task:'+1 任务',noteTask:'+1 笔记 · +1 任务',tomorrow:'+1 明天的任务',synced:'已同步'}}
 };
 /* Recording time as it was on the device's clock: read straight from the ISO string,
    not converted to the viewer's time zone. */
+/* full wall-clock parts (no time-zone conversion) and minutes since epoch for differences */
+function wallP(iso){const r=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(iso||'');if(!r)return null;
+  const ms=Date.UTC(+r[1],+r[2]-1,+r[3],+r[4],+r[5]);return {ms,dow:new Date(ms).getUTCDay(),hm:r[4]+':'+r[5]};}
+/* Claude usage page data (contract: ../docs/claude-usage-api.md). Mock: api/v1/pages/claude-usage.json */
+let CU=null;
+async function loadUsage(){
+  try{const r=await fetch(API_BASE+'/pages/claude-usage.json',{cache:'no-store'});if(!r.ok)throw 0;CU=await r.json();}
+  catch(e){log('Claude usage: API unreachable — keeping cache');}
+  draw();
+}
 function wall(iso){const r=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(iso||'');return r?{m:+r[2],d:+r[3],hm:r[4]+':'+r[5]}:null;}
 const CJK=/[　-〿㐀-鿿豈-﫿＀-￯]/;
 const cj=t=>CJK.test(t)?' cjk':'';
@@ -376,7 +434,7 @@ function initial(ui,content){
   const c=JSON.parse(JSON.stringify(SAMPLE[content]));
   return {
     ui, content, mode:'lock', lockIdx:0, lockT:0, day:0, focus:0, confirm:false, confirmT:0, rot:0, rotT:0, elapsed:0, phaseT:0, lastLen:0,
-    batt:78, charging:false, err:'card', slide:'', stripEntry:0, stripIdle:0,
+    batt:78, charging:false, err:'card', slide:'', stripEntry:0, stripIdle:0, page:0, pslide:'',
     online:true, cardFull:false, pending:0, changes:0, toast:'', toastT:0, resIdx:0, nextId:100, recPausedSync:false,
     tasks:c.tasks, someday:c.someday, planned:c.planned, results:c.results,
     log:['Ready — locked, '+c.tasks.length+' tasks today']
@@ -396,7 +454,33 @@ const metaText=(t,s)=>(t.carried?T[s.ui].carried:'')+(t.detail||'');
 /* Render a screen from state. */
 function screen(s){
   const L=T[s.ui], h=[], cls='scr'+(s.ui==='zh'?' zh':'');
-  const wrap=()=>'<div class="'+cls+'" lang="'+(s.ui==='zh'?'zh-Hans':'en')+'">'+h.join('')+'</div>';
+  const pg=s.pslide?' pg-'+s.pslide:'';
+  const wrap=()=>'<div class="'+cls+pg+'" lang="'+(s.ui==='zh'?'zh-Hans':'en')+'">'+h.join('')+'</div>';
+  if(s.mode==='page'){
+    const title=s.page===1?L.cuTitle:L.mdTitle;
+    h.push('<div class="hd"><div><span class="t">'+esc(title)+'</span></div><span class="hr">'+battery(s)+'</span></div>');
+    if(s.page===1){
+      const now=CU&&wallP(CU.updated_at);
+      const block=(label,b,showDay)=>{
+        if(!b)return '';
+        const p=Math.max(0,Math.min(100,Math.round(b.used_pct))), col=p>=95?'var(--s-rec)':p>=80?'var(--s-due)':'var(--s-text)';
+        const rs=wallP(b.resets_at); let line='';
+        if(rs){
+          const t=(showDay?L.wdays[rs.dow]+' ':'')+rs.hm;
+          let m=now?Math.max(0,Math.round((rs.ms-now.ms)/60000)):0;
+          const d=Math.floor(m/1440),hh=Math.floor(m%1440/60),mm=m%60;
+          line='<div class="me">'+esc(L.cuResets(t,L.dur(d,hh,mm)))+'</div>';
+        }
+        return '<div class="cub"><div class="cur"><span class="lb2">'+label+'</span><span class="pct" style="color:'+col+'">'+p+'%</span></div><div class="bar"><i style="width:'+p+'%;background:'+col+'"></i></div>'+line+'</div>';
+      };
+      if(CU)h.push('<div class="cu">'+block(L.cuSession,CU.session,false)+block(L.cuWeek,CU.week,true)+'</div>');
+      else h.push('<div class="soon"><b>'+L.cuNone+'</b></div>');
+      if(now)h.push('<div class="pgf"><span>'+esc(L.cuUpd(now.hm))+'</span></div>');
+    }else{
+      h.push('<div class="soon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="2"/><ellipse cx="12" cy="12" rx="10" ry="4"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(120 12 12)"/></svg><b>'+L.soon+'</b><span>'+L.soonSub+'</span></div>');
+    }
+    return wrap();
+  }
   if(s.mode==='sleep'){
     /* backlight off: nothing drawn */
     return '<div class="scr" style="background:#000"></div>';
@@ -454,7 +538,7 @@ function screen(s){
       h.push('<div class="lkn'+(s.ui==='zh'?' cjk':'')+'" style="color:var(--s-muted);font-size:12px">'+L.noNotes+'</div>');
     }else{
       const i=s.lockIdx%notes.length, n=notes[i], m=L.noteTime(n.recorded_at);
-      h.push('<div class="lkn'+cj(n.excerpt)+'">'+esc(n.excerpt)+'</div><div class="lkm'+cj(m)+'">'+esc(m)+'</div>');
+      h.push('<div class="lkw'+(s.slide?' sl-'+s.slide:'')+'"><div class="lkn'+cj(n.excerpt)+'">'+esc(n.excerpt)+'</div><div class="lkm'+cj(m)+'">'+esc(m)+'</div></div>');
       if(notes.length>1)dots='<span class="dots">'+notes.map((_,k)=>'<i'+(k===i?' class="on"':'')+'></i>').join('')+'</span>';
     }
     h.push('<div class="lkf">'+dots+'<span>'+L.lockHint+'</span></div>');
@@ -554,6 +638,7 @@ function plus(){
 }
 function next(){
   if(S.mode==='lock'){S.lockIdx++;S.lockT=0;draw();return;}
+  if(S.mode==='page'){toPage(0,'r');return;}                /* NEXT on a page: back to Today */
   if(S.mode!=='list')return;
   if(S.confirm){browse('l');return;}                       /* picker: next item */
   /* Today: short loop — each task, then the When I Have Time line as ONE stop, then back to the top */
@@ -564,6 +649,7 @@ function next(){
 function ok(){
   if(S.mode==='error'){S.mode='list';draw();return;}
   if(S.mode==='lock'){S.mode='list';log('Unlocked');draw();return;}
+  if(S.mode==='page'){toPage(0,'r');return;}                /* OK on a page: back to Today */
   if(S.mode!=='list')return;
   const n=S.tasks.length,f=Math.min(S.focus,n);
   if(f<n){
@@ -595,7 +681,7 @@ function finishSync(){
   if(!toast.length)toast=[T[S.ui].toast.synced];
   S.pending=0;S.changes=0;S.mode='list';S.toast=toast.join(' · ');S.toastT=3;
   backToSleep();
-  loadLock().then(()=>{log('Wi-Fi off');draw();});
+  Promise.all([loadLock(),loadUsage()]).then(()=>{log('Wi-Fi off');draw();});
 }
 function tick(){
   if(S.mode==='lock'){if(++S.lockT>=(LOCK.interval_s||6)){S.lockT=0;S.lockIdx++;}}
@@ -664,7 +750,8 @@ function toLock(why){S.mode='lock';S.lockT=0;S.confirm=false;S.focus=0;log(why+'
 function backToSleep(){if(S.fromSleep){S.fromSleep=false;S.mode='sleep';log('Back to sleep');}}
 /* where a hold of this button would go right now (null = hold does nothing) */
 function holdTarget(btn){
-  if(btn==='next')return (S.mode==='list'||S.mode==='lock')?'sleep':null;
+  if(btn==='next')return (S.mode==='list'||S.mode==='lock'||S.mode==='page')?'sleep':null;
+  if(S.mode==='page')return 'lock';
   if(S.mode==='list')return S.confirm?'back':'lock';
   if(S.mode==='lock')return 'sleep';
   return null;
@@ -726,15 +813,78 @@ function swipe(dir){
   if(k>1){S.rot=(S.rot+(dir==='l'?1:-1)+k)%k;S.slide=dir;clearSlide();}
   S.stripIdle=0;log('Swipe '+(dir==='l'?'←':'→')+' on When I Have Time');draw();
 }
+/* Pages: Today (0) → Claude (1) → MD (2). Reached only by swiping on Today outside the bottom line. */
+let pslideT=null;
+function lockNote(dir){
+  const n=(LOCK.notes||[]).length;if(n<2)return;
+  S.lockIdx=(S.lockIdx+(dir==='l'?1:-1)+n)%n;S.lockT=0;S.slide=dir;clearSlide();
+  log('Swipe '+(dir==='l'?'←':'→')+' — '+(dir==='l'?'next':'previous')+' note');draw();
+}
+function unlockUp(){
+  S.mode='list';S.pslide='u';clearTimeout(pslideT);pslideT=setTimeout(()=>{S.pslide='';draw();},300);
+  log('Swipe ↑ — unlocked');draw();
+}
+function bounce(dir){
+  S.pslide='b'+dir;clearTimeout(pslideT);pslideT=setTimeout(()=>{S.pslide='';draw();},360);
+  log('Edge — no more pages '+(dir==='l'?'→':'←'));draw();
+}
+function toPage(i,dir){
+  i=Math.max(0,Math.min(2,i));
+  const cur=S.mode==='page'?S.page:0;
+  if(i===cur&&S.mode!=='page'&&i===0)return;
+  if(i===0){S.mode='list';S.page=0;}else{S.mode='page';S.page=i;S.confirm=false;}
+  S.pslide=dir;clearTimeout(pslideT);pslideT=setTimeout(()=>{S.pslide='';draw();},300);
+  log('Page → '+['Today','Claude','MD'][i]);draw();
+}
 let sw=null, swallowClick=false;
 $('live').addEventListener('pointerdown',e=>{
-  sw=(S.mode==='list'&&(S.confirm?e.target.closest('.cf'):e.target.closest('.strip')))?{x:e.clientX,y:e.clientY}:null;
+  sw=null;
+  if(S.mode==='lock')sw={x:e.clientX,y:e.clientY,kind:'lock'};
+  else if(S.mode==='page')sw={x:e.clientX,y:e.clientY,kind:'page'};
+  else if(S.mode==='list'){
+    if(S.confirm){if(e.target.closest('.cf'))sw={x:e.clientX,y:e.clientY,kind:'strip'};}
+    else sw={x:e.clientX,y:e.clientY,kind:e.target.closest('.strip')?'strip':'page'};
+  }
 });
 $('live').addEventListener('pointerup',e=>{
   if(!sw)return;
-  const dx=e.clientX-sw.x, dy=e.clientY-sw.y; sw=null;
-  if(Math.abs(dx)>24&&Math.abs(dx)>Math.abs(dy)){swallowClick=true;swipe(dx<0?'l':'r');setTimeout(()=>swallowClick=false,0);}
+  /* distances in DEVICE pixels, so the 2× and actual-size previews behave the same */
+  const k=$('live').getBoundingClientRect().width/240;
+  const dx=(e.clientX-sw.x)/k, dy=(e.clientY-sw.y)/k, kind=sw.kind; sw=null;
+  if(kind==='lock'){
+    /* lock screen: only deliberate swipes count (pocket safety); taps stay ignored */
+    if(Math.abs(dx)>=24&&Math.abs(dx)>Math.abs(dy)){swallowClick=true;setTimeout(()=>swallowClick=false,0);lockNote(dx<0?'l':'r');}
+    else if(dy<=-60&&Math.abs(dy)>Math.abs(dx)){swallowClick=true;setTimeout(()=>swallowClick=false,0);unlockUp();}
+    return;
+  }
+  if(Math.abs(dx)>12&&Math.abs(dx)>Math.abs(dy)){
+    swallowClick=true;setTimeout(()=>swallowClick=false,0);
+    const dir=dx<0?'l':'r';
+    if(kind==='strip')swipe(dir);
+    else{
+      const ni=(S.mode==='page'?S.page:0)+(dir==='l'?1:-1);
+      if(ni<0||ni>2)bounce(dir);else toPage(ni,dir);
+    }
+  }
 });
+
+/* ---------- simulated finger ---------- */
+(function(){
+  const fx=$('touchFx'), live=$('live');let dot=null,trail=null,st=null;
+  const pos=e=>{const r=fx.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};};
+  live.addEventListener('pointerdown',e=>{
+    st=pos(e);dot=document.createElement('i');dot.className='tdot'+(S.mode==='sleep'?' ign':'');
+    dot.style.left=st.x+'px';dot.style.top=st.y+'px';fx.append(dot);
+    trail=document.createElement('i');trail.className='ttrail';trail.style.left=st.x+'px';trail.style.top=st.y+'px';trail.style.width='0';fx.append(trail);
+  });
+  live.addEventListener('pointermove',e=>{
+    if(!dot)return;const p=pos(e),dx=p.x-st.x,dy=p.y-st.y;
+    dot.style.left=p.x+'px';dot.style.top=p.y+'px';
+    trail.style.width=Math.hypot(dx,dy)+'px';trail.style.transform='rotate('+Math.atan2(dy,dx)+'rad)';
+  });
+  const end=()=>{if(!dot)return;const d=dot,t=trail;dot=trail=null;d.classList.add('up');t.style.opacity='0';setTimeout(()=>{d.remove();t.remove();},380);};
+  live.addEventListener('pointerup',end);live.addEventListener('pointerleave',end);live.addEventListener('pointercancel',end);
+})();
 $('live').addEventListener('click',e=>{
   if(swallowClick){swallowClick=false;return;}
   if(S.mode!=='list')return;
@@ -752,7 +902,7 @@ setInterval(tick,1000);
 draw();
 /* re-measure once web fonts arrive (widths change) */
 if(document.fonts)document.fonts.ready.then(()=>{lastHtml='';draw();});
-loadLock().then(renderGallery);
+Promise.all([loadLock(),loadUsage()]).then(renderGallery);
 
 /* ---------- static gallery ---------- */
 function renderGallery(){
@@ -763,6 +913,8 @@ function renderGallery(){
   const enNote=Math.max(0,notes.findIndex(n=>!CJK.test(n.excerpt)));
   let g;const G=[];
   g=base();g.mode='lock';g.lockIdx=enNote;G.push(['Lock screen','Shows notes chosen on the computer. Touch is ignored.',g]);
+  g=base();g.mode='page';g.page=1;G.push(['Claude usage','Swipe left on Today. Shows the 5-hour and weekly limits with reset countdowns. Orange from 80%, red from 95%.',g]);
+  g=base();g.mode='page';g.page=2;G.push(['MD simulations','Placeholder page for now.',g]);
   g=base();G.push(['Today','Highlight on the first task. Carried-over tasks are labelled.',g]);
   g=base();g.tasks[0].done=true;g.changes=1;g.online=false;G.push(['Checked off offline','The list updates right away and the change waits for the next sync.',g]);
   g=base();g.focus=3;g.rot=1;g.confirm=true;G.push(['Browsing in Move to Today?','NEXT or a swipe shows the next task. OK moves it. Holding OK goes back.',g]);
@@ -780,6 +932,7 @@ function renderGallery(){
   $('gallery').innerHTML=G.map(cell).join('');
 
   const Z=[];
+  g=base('zh','zh');g.mode='page';g.page=1;Z.push(['Claude 用量 · Claude usage','Chinese labels: 5 小时 / 本周.',g]);
   g=base('zh','zh');g.mode='lock';g.lockIdx=zhNote;Z.push(['锁屏 · Lock screen','15px Han text, 1.55 line height, up to 5 lines.',g]);
   g=base('zh','zh');Z.push(['今天 · Today','14px task titles. Labels at 11px with no uppercase tracking.',g]);
   g=base('zh','zh');g.focus=3;g.confirm=true;Z.push(['移到今天？ · Move to Today?','Two-line title limit. Buttons read 取消 / 移入.',g]);
