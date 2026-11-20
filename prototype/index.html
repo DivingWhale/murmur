@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Murmur UI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* device screen tokens (240x240 LCD) */
+  --s-bg:#0B0C0E; --s-surface:#1C1F24; --s-line:#262A30; --s-text:#F4F3EF; --s-muted:#9CA0A8; --s-dim:#6B7079;
+  --s-focus:#FFD23F; --s-rec:#FF5C4D; --s-due:#FFB067; --s-sync:#6CB6FF;
+  --s-font:Inter,"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  /* page tokens */
+  --bg:#ECEAE5; --card:#FFFFFF; --ink:#16171A; --ink2:#55585F; --rule:#DAD7D0; --btn:#F3F1EC;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--bg:#15161A;--card:#1E2025;--ink:#EDECE8;--ink2:#A3A6AD;--rule:#2E3138;--btn:#272A30;}
+}
+:root[data-theme="dark"]{--bg:#15161A;--card:#1E2025;--ink:#EDECE8;--ink2:#A3A6AD;--rule:#2E3138;--btn:#272A30;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--s-font);font-size:14px;line-height:1.45}
+.wrap{max-width:1180px;margin:0 auto;padding:40px 16px 80px}
+h1{font-size:26px;margin:0 0 4px;letter-spacing:-.01em}
+h2{font-size:18px;margin:56px 0 4px}
+.sub{color:var(--ink2);margin:0}
+.top{display:flex;flex-wrap:wrap;gap:40px;margin-top:28px;align-items:flex-start}
+
+/* device */
+.device{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:22px}
+.bezel{background:#24262A;border-radius:44px;padding:28px;box-shadow:0 1px 0 #3a3d42 inset,0 18px 40px rgba(0,0,0,.22)}
+.zoom{width:480px;height:480px;border-radius:6px;overflow:hidden;background:var(--s-bg);touch-action:pan-y;-webkit-user-select:none;user-select:none}
+/* hold-NEXT overlay: sized in container units so it matches the screen at 2× and actual size */
+/* container-type ignores content width, so the wrapper needs an explicit width matching .zoom */
+.swrap{position:relative;container-type:inline-size;width:480px;height:480px}
+.swrap.real{width:27.7mm;height:27.7mm}
+#holdOv{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.72);border-radius:6px;color:#F4F3EF;font-family:var(--s-font);font-weight:700;font-size:8cqw;pointer-events:none}
+#holdOv.on{display:flex}
+.hob{display:flex;flex-direction:column;align-items:center;gap:.3em}
+.hobar{width:5em;height:.28em;border-radius:1em;background:#3A3E45;overflow:hidden}
+.hobar i{display:block;height:100%;width:0;background:#F4F3EF;animation:hob .55s linear forwards}
+@keyframes hob{to{width:100%}}
+#bNext,#bOk{touch-action:none;-webkit-user-select:none;user-select:none}
+.zoom > .scr{transform:scale(2);transform-origin:0 0}
+.hw{display:flex;gap:28px;align-items:flex-start}
+.hwb{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--ink2)}
+.hwb button{width:60px;height:60px;border-radius:50%;border:0;background:#2E3035;color:#F4F3EF;cursor:pointer;display:grid;place-items:center;box-shadow:0 3px 0 #17181B}
+.hwb button:active{transform:translateY(2px);box-shadow:0 1px 0 #17181B}
+.hwb button.plus{width:72px;height:72px;background:#3A3C42}
+.hwb button.plus.on{background:var(--s-rec)}
+.hwb button:focus-visible,.panel button:focus-visible{outline:3px solid #2F6FEB;outline-offset:3px}
+
+/* panel */
+.panel{flex:1 1 380px;min-width:0;background:var(--card);border-radius:16px;padding:24px 26px;display:flex;flex-direction:column;gap:20px}
+.panel h3{margin:0 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2)}
+.map{display:grid;grid-template-columns:64px 1fr;gap:8px 12px;margin:0}
+.map dt{font-weight:700;font-family:"JetBrains Mono",monospace;font-size:12px;padding-top:1px}
+.map dd{margin:0;color:var(--ink2)}
+.sim{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sim button{border:1px solid var(--rule);background:var(--btn);color:var(--ink);border-radius:999px;padding:8px 14px;font:inherit;font-size:13px;cursor:pointer;min-height:40px}
+.sim button[aria-pressed="true"]{background:var(--ink);color:var(--card);border-color:var(--ink)}
+.sim .lbl{font-size:13px;color:var(--ink2);min-width:96px}
+.seg{display:inline-flex;gap:0}
+.seg button{border-radius:0}
+.seg button:first-child{border-radius:999px 0 0 999px}
+.seg button:last-child{border-radius:0 999px 999px 0;margin-left:-1px}
+.log{list-style:none;margin:0;padding:0;font-family:"JetBrains Mono","Noto Sans SC",monospace;font-size:12px;color:var(--ink2);display:flex;flex-direction:column;gap:4px;min-height:110px}
+.log li:first-child{color:var(--ink)}
+
+/* gallery */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:28px 24px;margin-top:20px}
+.cell .z{width:240px;height:240px;border-radius:10px;overflow:hidden;background:var(--s-bg);box-shadow:0 0 0 8px #24262A}
+.cell{display:flex;flex-direction:column;gap:14px;align-items:flex-start;padding-left:8px;padding-top:8px}
+.cell b{display:block;font-size:14px}
+.cell span{color:var(--ink2);font-size:13px}
+.rules{background:var(--card);border-radius:16px;padding:20px 24px;margin-top:20px}
+.rules table{border-collapse:collapse;width:100%;font-size:13px}
+.rules th,.rules td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+.rules th{color:var(--ink2);font-weight:600}
+.tbl{overflow-x:auto}
+
+/* ===== the 240x240 screen ===== */
+.scr{width:240px;height:240px;position:relative;background:var(--s-bg);color:var(--s-text);font-family:var(--s-font);overflow:hidden;-webkit-font-smoothing:antialiased;line-break:strict}
+/* Physical scale: 1.54" square panel = 27.7 mm per side, 240 px → ≈220 ppi, 1 px ≈ 0.115 mm.
+   Minimums: Latin text 13px (1.5 mm), body 16px (1.85 mm); Han text 16px, body 17–18px; touch targets 60px (≈7 mm). */
+.hd{height:32px;padding:0 10px 0 12px;display:flex;align-items:center;justify-content:space-between}
+.hd .t{font-size:16px;font-weight:700}
+.hd .d{font-size:13px;color:var(--s-muted);margin-left:6px;font-weight:500}
+.st{display:flex;align-items:center;gap:4px;font-size:13px;font-weight:600;color:var(--s-muted)}
+.st.sync{color:var(--s-sync)}
+/* Battery: muted ≥21%, orange 11–20%, red ≤10%. Recording is refused at ≤3% (not charging). */
+.hr{display:flex;align-items:center;gap:8px}
+.bt{display:flex;align-items:center;gap:3px;font-size:13px;font-weight:600;color:var(--s-muted);font-variant-numeric:tabular-nums}
+.bt.low{color:var(--s-due)}
+.bt.crit{color:var(--s-rec)}
+.scr.zh .bt{font-size:14px}
+.rows{padding:0 5px}
+.row{height:60px;margin-bottom:3px;border-radius:9px;padding:0 9px;display:flex;align-items:center;gap:10px;cursor:pointer}
+.row.f{background:var(--s-surface);box-shadow:inset 0 0 0 2px var(--s-focus)}
+.cb{flex:0 0 20px;height:20px;border-radius:50%;border:2px solid var(--s-dim);display:grid;place-items:center}
+.row.done .cb{background:var(--s-muted);border-color:var(--s-muted)}
+.tx{min-width:0;flex:1}
+.ti{font-size:16px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+.row.done .ti{color:var(--s-dim);text-decoration:line-through}
+.me{font-size:13px;color:var(--s-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.me .due{color:var(--s-due)}
+.empty{height:130px;display:grid;place-items:center;text-align:center;color:var(--s-muted);font-size:14px}
+.empty b{display:block;color:var(--s-text);font-size:18px;margin-bottom:2px}
+.strip{position:absolute;left:0;right:0;bottom:0;height:74px;border-top:1px solid var(--s-line);padding:5px}
+.sbox{height:100%;border-radius:9px;padding:6px 9px;cursor:pointer;display:flex;flex-direction:column;justify-content:center;overflow:hidden}
+.sbox.f{background:var(--s-surface);box-shadow:inset 0 0 0 2px var(--s-focus)}
+.lb{display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:700;letter-spacing:.07em;color:var(--s-muted)}
+.lb.ask{color:var(--s-focus)}
+.dots{display:flex;gap:4px}.dots i{width:5px;height:5px;border-radius:50%;background:#3A3E45}.dots i.on{background:var(--s-text)}
+.sl{display:flex;align-items:center;gap:6px;margin-top:4px}
+/* browse animation on the When I Have Time line: l = next (comes from the right), r = previous */
+.sl.sl-l{animation:slL .28s ease-out}.sl.sl-r{animation:slR .28s ease-out}
+@keyframes slL{from{transform:translateX(28px);opacity:0}}
+@keyframes slR{from{transform:translateX(-28px);opacity:0}}
+.sl .ti{flex:1;min-width:0}
+.chip{flex:0 0 auto;font-size:13px;font-weight:600;color:var(--s-due);background:rgba(255,176,103,.14);border-radius:5px;padding:1px 6px}
+.hint{font-size:13px;color:var(--s-muted);margin-top:2px}
+.cf{position:absolute;inset:0;padding:14px 12px 10px;display:flex;flex-direction:column;gap:6px}
+.cft{font-size:19px;font-weight:600;text-align:center;line-height:1.25;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cfb{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:auto}
+.cfw{display:flex;flex-direction:column;gap:6px}
+.cfw.sl-l{animation:slL .28s ease-out}.cfw.sl-r{animation:slR .28s ease-out}
+.cfd{display:flex;align-items:center;justify-content:center;gap:10px;min-height:16px}
+.btn{height:72px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:18px;font-weight:700;cursor:pointer}
+.btn small{font-size:11px;font-weight:600;letter-spacing:.06em;opacity:.75;margin-top:2px}
+.btn.no{background:var(--s-surface);color:var(--s-text);box-shadow:inset 0 0 0 1px #3A3E45}
+.btn.yes{background:var(--s-focus);color:#0B0C0E}
+/* clock left; battery over date on the right, the pair centred on the clock's height */
+.lkh{padding:12px 14px 0;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.lkh .clk{font-family:var(--s-font);font-size:34px;font-weight:600;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.lks{display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:0}
+.lkh .d{font-size:13px;color:var(--s-muted);font-weight:500;line-height:1.2;white-space:nowrap}
+.scr.zh .lkh .d{font-size:14px}
+.lkn{margin:10px 14px 0;font-size:17px;line-height:1.38;font-weight:500;display:-webkit-box;-webkit-line-clamp:5;line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+.lkm{margin:6px 14px 0;font-size:13px;color:var(--s-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lkf{position:absolute;left:14px;right:14px;bottom:10px;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--s-muted)}
+.lkf span:last-child{margin-left:auto}
+.toast{position:absolute;left:50%;bottom:82px;transform:translateX(-50%);background:var(--s-text);color:var(--s-bg);font-size:14px;font-weight:600;border-radius:999px;padding:5px 12px;white-space:nowrap}
+.full{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:14px}
+.rech{position:absolute;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;font-size:13px;font-weight:700;letter-spacing:.06em}
+.rech .r{color:var(--s-rec);display:flex;align-items:center;gap:6px}
+.rdot{width:10px;height:10px;border-radius:50%;background:var(--s-rec)}
+.blink .rdot{opacity:.35}
+.timer{font-family:"JetBrains Mono",monospace;font-size:56px;font-weight:600;letter-spacing:-.02em}
+.wave{display:flex;align-items:center;gap:3px;height:44px;margin-top:8px}
+.wave i{width:5px;border-radius:2px;background:var(--s-rec)}
+.foot{position:absolute;bottom:12px;left:0;right:0;text-align:center;font-size:13px;color:var(--s-muted)}
+.big{font-size:26px;font-weight:700;margin-top:10px}
+.small{font-size:14px;color:var(--s-muted);margin-top:4px;line-height:1.4}
+.steps{list-style:none;margin:12px 0 0;padding:0;text-align:left;display:flex;flex-direction:column;gap:10px;font-size:16px}
+.steps li{display:flex;align-items:center;gap:8px;color:var(--s-dim)}
+.steps li.ok{color:var(--s-text)}
+.steps li.now{color:var(--s-sync)}
+.ic{width:16px;height:16px;display:grid;place-items:center}
+
+/* ---- Chinese ----
+   Content: any text containing Han characters gets .cjk (bigger, looser).
+   UI chrome: .scr.zh drops the uppercase letter-spacing. Han is never below 16px for body
+   and 13px only for 2–4 character labels (13px ≈ 1.5 mm; complex glyphs need 16px to keep strokes). */
+.ti.cjk{font-size:17px}
+.me.cjk{font-size:14px}
+.lkn.cjk{font-size:18px;line-height:1.5;-webkit-line-clamp:4;line-clamp:4;letter-spacing:.01em}
+.lkm.cjk{font-size:14px}
+.cft.cjk{font-size:20px;line-height:1.35}
+.scr.zh .lb{font-size:13px;letter-spacing:.04em;font-weight:700}
+.scr.zh .rech{font-size:14px;letter-spacing:.04em}
+.scr.zh .hint,.scr.zh .foot,.scr.zh .st,.scr.zh .lkf,.scr.zh .me,.scr.zh .chip,.scr.zh .hd .d{font-size:14px}
+.scr.zh .small{font-size:15px}
+.scr.zh .hd .t{font-size:17px}
+.scr.zh .btn{font-size:19px}
+.scr.zh .strip{height:76px}
+.scr.zh .sl{margin-top:2px}
+.cnt{font-size:12px;font-weight:700;color:var(--s-bg);background:var(--s-muted);border-radius:999px;padding:0 6px;margin-left:6px;vertical-align:2px}
+
+/* Horizontal scroll for overflowing single-line text (focused task, rotating line).
+   Show the start for 1 s, then scroll left continuously at 30 px/s (≈3.5 mm/s); a repeat follows after a 40px gap so it loops without reversing. Firmware: LVGL LV_LABEL_LONG_SCROLL_CIRCULAR. */
+.ti.mq.run{text-overflow:clip}
+.ti.mq.run > span{display:inline-block;will-change:transform}
+.mqgap{display:inline-block;width:40px}
+/* Position is driven from JS (mqFrame) by a clock kept per text, so redraws don't restart it,
+   and it ignores the viewing computer's reduce-motion setting — the device has none. */
+
+/* actual-size preview: 27.7 mm in CSS units (approximate — CSS assumes 96 dpi) */
+.zoom.real{width:27.7mm;height:27.7mm}
+.zoom.real > .scr{transform:scale(.4362)}
+
+@media (max-width:560px){
+  .zoom{width:288px;height:288px}.zoom > .scr{transform:scale(1.2)}
+  .swrap:not(.real){width:288px;height:288px}
+  .bezel{padding:16px;border-radius:28px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Murmur</h1>
+  <p class="sub">UI for the Waveshare ESP32-S3-Touch-LCD-1.54 (240×240), shown at 2×. Use the buttons below the screen, or tap rows on the screen. Supports English and Chinese.</p>
+
+  <div class="top">
+    <div class="device">
+      <div class="bezel"><div class="swrap"><div class="zoom" id="live"></div><div id="holdOv" aria-live="polite"></div></div></div>
+      <div class="hw">
+        <div class="hwb"><button id="bNext" aria-label="Next"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>NEXT</div>
+        <div class="hwb"><button id="bPlus" class="plus" aria-label="Plus: record"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>PLUS</div>
+        <div class="hwb"><button id="bOk" aria-label="OK"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>OK</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div>
+        <h3>Buttons (proposed)</h3>
+        <dl class="map">
+          <dt>PLUS</dt><dd>Start recording right away. Press again to stop and save. Works from any screen, pauses a sync in progress, and <b>wakes the device from sleep straight into recording</b>. After that recording is saved and synced, it goes back to sleep.</dd>
+          <dt>NEXT</dt><dd>Press: move the highlight down Today, then onto the When I Have Time line (one stop), then back to the top. <b>In “Move to Today?”:</b> press to see the next When I Have Time task.  <b>Hold 0.8 s:</b> sleep straight away (screen off). <b>While asleep:</b> press to wake to the lock screen.</dd>
+          <dt>OK</dt><dd>On a Today task: check it off (or undo). On the When I Have Time line: opens “Move to Today?” for the task shown; press again to move it into Today. <b>Hold 0.8 s: back one level</b> — “Move to Today?” → Today → lock screen → sleep. The screen shows where you’re going; release early to cancel.</dd>
+          <dt>Lock</dt><dd>Cycles through Miscellaneous notes chosen on the computer. OK unlocks, NEXT shows the next note, PLUS records. Touch is ignored so it’s safe in a pocket.</dd>
+          <dt>Touch</dt><dd>Tap a task to check it off. <b>Swipe left/right on the bottom line</b> to browse When I Have Time (the rotation stops; it resumes after 10 s idle). Tapping the bottom line opens “Move to Today?” with large Move and Cancel buttons. It cancels by itself after 8 s, so a stray touch never moves anything.</dd>
+        </dl>
+      </div>
+      <div>
+        <h3>Language</h3>
+        <div class="sim">
+          <span class="lbl">Screen labels</span>
+          <span class="seg"><button id="uiEn" aria-pressed="true">English</button><button id="uiZh" aria-pressed="false">中文</button></span>
+        </div>
+        <div class="sim" style="margin-top:8px">
+          <span class="lbl">Preview size</span>
+          <span class="seg"><button id="zm2" aria-pressed="true">2×</button><button id="zmReal" aria-pressed="false">Actual size</button></span>
+        </div>
+        <div class="sim" style="margin-top:8px">
+          <span class="lbl">Sample tasks</span>
+          <span class="seg"><button id="ctEn" aria-pressed="true">English</button><button id="ctZh" aria-pressed="false">中文</button></span>
+        </div>
+      </div>
+      <div>
+        <h3>Simulate</h3>
+        <div class="sim">
+          <button id="sOnline" aria-pressed="true">Campus Wi-Fi</button>
+          <button id="sFull" aria-pressed="false">microSD full</button>
+          <button id="sWake">Wake device</button>
+          <button id="sDay">Midnight → next day</button>
+          <button id="sLock">Lock</button>
+          <button id="sReset">Reset</button>
+        </div>
+        <div class="sim" style="margin-top:8px">
+          <span class="lbl">Battery</span>
+          <span class="seg"><button id="b78" aria-pressed="true">78%</button><button id="b15" aria-pressed="false">15%</button><button id="b3" aria-pressed="false">3%</button><button id="bChg" aria-pressed="false">Charging</button></span>
+        </div>
+      </div>
+      <div>
+        <h3>Event log</h3>
+        <ul class="log" id="log"></ul>
+      </div>
+    </div>
+  </div>
+
+  <h2>Screen states</h2>
+  <p class="sub">Each key state at actual size (240×240 CSS px).</p>
+  <div class="grid" id="gallery"></div>
+
+  <h2>Chinese</h2>
+  <p class="sub">The same screens with Chinese labels and Chinese content, plus a mixed case.</p>
+  <div class="grid" id="galleryZh"></div>
+
+  <div class="rules">
+    <h3 style="margin:0 0 10px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2)">Type rules for Chinese</h3>
+    <div class="tbl"><table>
+      <tr><th>Element</th><th>Latin</th><th>Han (中文)</th><th>Physical size / why</th></tr>
+      <tr><td>Panel</td><td colspan="2">1.54″ square, 240×240 → 27.7 mm per side, ≈ 220 ppi, 1 px ≈ 0.115 mm</td><td>All sizes below are checked against this, not against the 2× preview</td></tr>
+      <tr><td>Task title</td><td>16px, 1 line (≈ 20 characters)</td><td>17px, 1 line (≈ 10 characters before “…”)</td><td>1.85 / 1.95 mm. Han below 16px loses strokes in characters like 赢 or 糖</td></tr>
+      <tr><td>Labels, hints, meta</td><td>13px minimum, uppercase with light tracking</td><td>13–14px, no added spacing</td><td>1.5–1.6 mm, the smallest text used anywhere</td></tr>
+      <tr><td>Lock-screen note</td><td>17px / 1.38, up to 5 lines</td><td>18px / 1.5, up to 4 lines (≈ 11 × 4 = 44 characters)</td><td>2.0–2.1 mm, readable at arm’s length</td></tr>
+      <tr><td>Touch targets</td><td colspan="2">Task rows 60px, Move/Cancel 72px, bottom line 64px</td><td>6.9–8.3 mm. 40px rows (4.6 mm) were too small to hit</td></tr>
+      <tr><td>Today list</td><td colspan="2">2 tasks visible; open count shown next to “Today”; NEXT scrolls</td><td>The cost of readable text on a 27.7 mm screen</td></tr>
+      <tr><td>Text limit (API)</td><td colspan="2">≤ 88 display units: a Han or full-width character = 2, anything else = 1</td><td>Fits the lock screen in either script</td></tr>
+      <tr><td>Long single-line text</td><td colspan="2">Not focused: cut with “…”. Focused task and the When I Have Time line: show the start for 1 s, then scroll left continuously at 30 px/s (≈ 3.5 mm/s) in a seamless loop (text, 40px gap, text again). The rotating line waits for one full loop. Lock-screen notes wrap instead of scrolling</td><td>Only one thing moves at a time. In firmware this maps to LVGL’s <code>LV_LABEL_LONG_SCROLL_CIRCULAR</code></td></tr>
+      <tr><td>Line breaks</td><td colspan="2">Strict line-break rules: no line starts with 。，、？！ or a closing bracket</td><td>Standard Chinese line-breaking rules</td></tr>
+      <tr><td>Firmware font</td><td colspan="2">Noto Sans SC, 13 / 14 / 17 / 18 / 20px, 4 bpp, covering the 3,500 common Chinese characters (通用规范汉字表 level 1) + ASCII + CJK punctuation</td><td>≈ 3–4 MB in flash at these sizes; fits in the board’s 16 MB. Fewer sizes saves space</td></tr>
+    </table></div>
+  </div>
+</div>
+
+<script>
+/* ---------- i18n ---------- */
+const DOW_EN=['Wed','Thu','Fri','Sat','Sun','Mon','Tue'];
+const DOW_ZH=['周三','周四','周五','周六','周日','周一','周二'];
+const T={
+  en:{today:'Today',day:d=>DOW_EN[d%7]+' '+(18+d),lockDate:d=>DOW_EN[d%7]+' '+(18+d)+' Nov',when:'WHEN I HAVE TIME',moveQ:'MOVE TO TODAY?',
+      cancel:'Cancel',move:'Move',auto:n=>'Cancels by itself in '+n+'s',paused:'PAUSED · OK TO CHOOSE',nothing:'Nothing waiting',
+      carried:'Carried over',due:d=>'Due '+DOW_EN[d%7],dueToday:'Due today',overdue:'Overdue',more:n=>'+'+n+' more · NEXT to scroll',
+      clear:'All clear',clearSub:'Press + to capture a thought',synced:'Synced',waiting:n=>n+' waiting',rec:'REC',stop:'Press + to stop',
+      syncPaused:'Sync paused · ',saved:'Saved',onCard:'on microSD',syncNext:'Syncing next',syncLater:'Will sync when online',syncing:'Syncing',
+      steps:['Campus Wi-Fi','Uploaded to Pi','Turning into tasks'],recAny:'Press + to record anytime',full:'Card full',
+      fullSub:'This recording wasn’t saved.<br>Free up space on the microSD card.',dismiss:'OK to dismiss',lockHint:'OK unlock · + record',
+      noNotes:'No notes chosen yet.<br>Pick Miscellaneous notes on your computer.',
+      battLow:'Battery too low',battLowSub:'Charge the device to record.<br>Recording now could damage the file.',noteTime:iso=>{const t=wall(iso);return t?t.d+' '+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][t.m-1]+' · '+t.hm:'';},
+      sep:' · ',toast:{task:'+1 task',noteTask:'+1 note · +1 task',tomorrow:'+1 task for tomorrow',synced:'Synced'}},
+  zh:{today:'今天',day:d=>DOW_ZH[d%7], /* weekday only: the header must fit count + sync + battery in 240px */lockDate:d=>'11月'+(18+d)+'日 '+DOW_ZH[d%7],when:'有空再做',moveQ:'移到今天？',
+      cancel:'取消',move:'移入',auto:n=>n+' 秒后自动取消',paused:'已暂停 · 按 OK 选择',nothing:'暂无任务',
+      carried:'延续',due:d=>DOW_ZH[d%7]+'截止',dueToday:'今天截止',overdue:'已逾期',more:n=>'还有 '+n+' 项 · NEXT 翻看',
+      clear:'全部完成',clearSub:'按 + 记录想法',synced:'已同步',waiting:n=>n+' 项待同步',rec:'录音中',stop:'按 + 停止',
+      syncPaused:'同步已暂停 · ',saved:'已保存',onCard:'已存入 microSD',syncNext:'即将同步',syncLater:'联网后同步',syncing:'同步中',
+      steps:['连接校园 Wi-Fi','上传到 Pi','整理成任务'],recAny:'随时按 + 录音',full:'存储卡已满',
+      fullSub:'本次录音未保存。<br>请清理 microSD 卡空间。',dismiss:'按 OK 关闭',lockHint:'OK 解锁 · + 录音',
+      noNotes:'还没有选择笔记。<br>请在电脑上挑选随记。',
+      battLow:'电量过低',battLowSub:'请先充电再录音。<br>现在录音可能损坏文件。',noteTime:iso=>{const t=wall(iso);return t?t.m+'月'+t.d+'日 '+t.hm:'';},
+      sep:' · ',toast:{task:'+1 任务',noteTask:'+1 笔记 · +1 任务',tomorrow:'+1 明天的任务',synced:'已同步'}}
+};
+/* Recording time as it was on the device's clock: read straight from the ISO string,
+   not converted to the viewer's time zone. */
+function wall(iso){const r=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(iso||'');return r?{m:+r[2],d:+r[3],hm:r[4]+':'+r[5]}:null;}
+const CJK=/[　-〿㐀-鿿豈-﫿＀-￯]/;
+const cj=t=>CJK.test(t)?' cjk':'';
+/* display width used for the API text limit: Han / full-width = 2, other = 1 */
+const units=t=>[...t].reduce((n,c)=>n+(CJK.test(c)?2:1),0);
+const MAX_UNITS=88; /* lock screen: 4 lines × ~11 Han at 18px, or 5 lines × ~24 Latin at 17px */
+
+const SAMPLE={
+  en:{tasks:[{id:1,title:'Email Dr. Weber about lab slot'},{id:2,title:'Return library books',carried:true},{id:3,title:'Buy coffee filters'}],
+      someday:[{id:10,title:'Finish report draft',due:2},{id:11,title:'Back up photos'},{id:12,title:'Read chapter 4 for seminar'}],
+      planned:[{id:20,title:'Submit lab form',day:1}],
+      results:[{t:'task',title:'Print report, ask about binding',detail:'Print shop',where:'today'},{t:'noteTask',title:'Try the standing-desk idea',where:'someday'},{t:'tomorrow',title:'Pick up parcel',where:'planned'}]},
+  zh:{tasks:[{id:1,title:'给魏老师发邮件约实验室时间'},{id:2,title:'还图书馆的书',carried:true},{id:3,title:'买咖啡滤纸'}],
+      someday:[{id:10,title:'完成报告初稿',due:2},{id:11,title:'备份照片'},{id:12,title:'读研讨课第四章'}],
+      planned:[{id:20,title:'交实验室表格',day:1}],
+      results:[{t:'task',title:'打印报告，顺便问装订',detail:'打印店',where:'today'},{t:'noteTask',title:'试试站立办公的想法',where:'someday'},{t:'tomorrow',title:'取快递',where:'planned'}]}
+};
+
+/* ---------- Lock-screen notes API (contract: ../docs/lockscreen-api.md) ----------
+   Mock: api/v1/lockscreen.json. Real Pi: set API_BASE to e.g. 'http://<pi>:8000/v1' and LOCK_PATH to '/lockscreen'. */
+const API_BASE='api/v1';
+const LOCK_PATH='/lockscreen.json';
+let LOCK={version:null,interval_s:6,notes:[]};
+async function loadLock(){
+  try{
+    const r=await fetch(API_BASE+LOCK_PATH,{cache:'no-store',headers:LOCK.version?{'If-None-Match':LOCK.version}:{}});
+    if(r.status===304){log('Lock notes unchanged');}
+    else if(!r.ok)throw new Error(r.status);
+    else{const j=await r.json();const changed=j.version!==LOCK.version;LOCK=j;if(changed)log('Lock notes cached ('+(j.notes||[]).length+')');
+      (j.notes||[]).forEach(n=>{if(units(n.excerpt||'')>MAX_UNITS)log('Warning: note '+n.id+' is over '+MAX_UNITS+' units');});}
+  }catch(e){log('Lock notes: API unreachable — keeping cache');}
+  draw();
+}
+
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const I={
+  check:'<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0B0C0E" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  sync:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8"/><path d="M4 3v5h5"/><path d="M4 13a8 8 0 0 0 14.3 4.9L20 16"/><path d="M20 21v-5h-5"/></svg>',
+  off:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M5 12.9a10 10 0 0 1 5.2-2.8"/><path d="M19 12.9a10 10 0 0 0-2-1.4"/><path d="M2 8.8a15 15 0 0 1 4.2-2.7"/><path d="M22 8.8A15 15 0 0 0 11 5"/></svg>',
+  done:'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  savedBig:'<svg width="56" height="56" viewBox="0 0 56 56" fill="none" stroke="#F4F3EF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="28" cy="28" r="25"/><path d="M17 29l7.5 7.5L39 21"/></svg>',
+  warn:'<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#FF5C4D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+  spin:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 3a9 9 0 1 1-9 9"/></svg>',
+  circ:'<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="8"/></svg>'
+};
+
+/* Battery indicator. Percent shown in 5% steps so ADC noise doesn't make it flicker.
+   big=true: large icon for the "battery too low" screen. */
+function battery(s,big){
+  const p=Math.max(0,Math.min(100,s.batt)), shown=Math.max(p>0?1:0,Math.round(p/5)*5);
+  const cls=s.charging?'':p<=10?' crit':p<=20?' low':'';
+  const w=Math.max(p>0?1.5:0,14.5*p/100).toFixed(1);
+  const bolt=s.charging?'<path d="M11.2 1.2 6.8 6.6h3.1l-1.3 4.2 4.6-5.6H10z" fill="currentColor" stroke="#0B0C0E" stroke-width="1.1" stroke-linejoin="round"/>':'';
+  const svg='<svg width="'+(big?66:22)+'" height="'+(big?36:12)+'" viewBox="0 0 22 12" aria-hidden="true"><rect x=".75" y=".75" width="18" height="10.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="19.9" y="4" width="1.8" height="4" rx=".8" fill="currentColor"/><rect x="2.5" y="2.5" width="'+w+'" height="7" rx="1.2" fill="currentColor"/>'+bolt+'</svg>';
+  if(big)return '<span class="bt'+cls+'" style="font-size:0">'+svg+'</span>';
+  return '<span class="bt'+cls+'" title="'+(s.charging?'Charging, ':'Battery ')+shown+'%">'+svg+shown+'%</span>';
+}
+function initial(ui,content){
+  ui=ui||'en';content=content||'en';
+  const c=JSON.parse(JSON.stringify(SAMPLE[content]));
+  return {
+    ui, content, mode:'lock', lockIdx:0, lockT:0, day:0, focus:0, confirm:false, confirmT:0, rot:0, rotT:0, elapsed:0, phaseT:0, lastLen:0,
+    batt:78, charging:false, err:'card', slide:'', stripEntry:0, stripIdle:0,
+    online:true, cardFull:false, pending:0, changes:0, toast:'', toastT:0, resIdx:0, nextId:100, recPausedSync:false,
+    tasks:c.tasks, someday:c.someday, planned:c.planned, results:c.results,
+    log:['Ready — locked, '+c.tasks.length+' tasks today']
+  };
+}
+let S=initial();
+
+function meta(t,s){
+  const L=T[s.ui],p=[];
+  if(t.carried)p.push(esc(L.carried));
+  if(t.detail)p.push(esc(t.detail));
+  if(t.due!=null)p.push('<span class="due">'+esc(t.due===s.day?L.dueToday:t.due<s.day?L.overdue:L.due(t.due))+'</span>');
+  return p.join(L.sep);
+}
+const metaText=(t,s)=>(t.carried?T[s.ui].carried:'')+(t.detail||'');
+
+/* Render a screen from state. */
+function screen(s){
+  const L=T[s.ui], h=[], cls='scr'+(s.ui==='zh'?' zh':'');
+  const wrap=()=>'<div class="'+cls+'" lang="'+(s.ui==='zh'?'zh-Hans':'en')+'">'+h.join('')+'</div>';
+  if(s.mode==='sleep'){
+    /* backlight off: nothing drawn */
+    return '<div class="scr" style="background:#000"></div>';
+  }
+  if(s.mode==='list'){
+    const n=s.tasks.length, pend=s.pending+s.changes;
+    /* compact sync status (icon + count) to leave room for the battery */
+    let st;
+    if(pend>0) st=s.online?'<span class="st sync" title="'+esc(L.waiting(pend))+'">'+I.sync+pend+'</span>':'<span class="st" title="'+esc(L.waiting(pend))+'">'+I.off+pend+'</span>';
+    else st='<span class="st" title="'+esc(L.synced)+'">'+I.done+'</span>';
+    st='<span class="hr">'+st+battery(s)+'</span>';
+    const open=s.tasks.filter(t=>!t.done).length;
+    h.push('<div class="hd"><div><span class="t">'+L.today+'</span>'+(n>2&&open?'<span class="cnt">'+open+'</span>':'')+'<span class="d">'+esc(L.day(s.day))+'</span></div>'+st+'</div>');
+    if(n===0){
+      h.push('<div class="empty"><div><b>'+L.clear+'</b>'+L.clearSub+'</div></div>');
+    }else{
+      const f=Math.min(s.focus,n);
+      const start=Math.max(0,Math.min(f,n-1)-1);
+      h.push('<div class="rows">');
+      s.tasks.slice(start,start+2).forEach((t,i)=>{
+        const idx=start+i, m=meta(t,s);
+        h.push('<div class="row'+(f===idx?' f':'')+(t.done?' done':'')+'" data-i="'+idx+'"><span class="cb">'+(t.done?I.check:'')+'</span><div class="tx"><div class="ti'+cj(t.title)+(f===idx&&!t.done?' mq':'')+'"><span>'+esc(t.title)+'</span></div>'+(m?'<div class="me'+cj(metaText(t,s))+'">'+m+'</div>':'')+'</div></div>');
+      });
+      h.push('</div>');
+    }
+    const sf=s.focus===n;
+    if(s.someday.length===0){
+      h.push('<div class="strip"><div class="sbox'+(sf?' f':'')+'" data-s="1"><div class="lb">'+L.when+'</div><div class="hint" style="margin-top:7px">'+L.nothing+'</div></div></div>');
+    }else{
+      const r=s.rot%s.someday.length, cur=s.someday[r];
+      const chip=cur.due!=null?'<span class="chip">'+esc(L.due(cur.due))+'</span>':'';
+      if(s.confirm){
+        h.length=0;
+        const left=Math.max(0,8-(s.confirmT||0));
+        h.push('<div class="cf"><div class="lb ask" style="justify-content:center">'+L.moveQ+'</div>'
+          +'<div class="cfw'+(s.slide?' sl-'+s.slide:'')+'"><div class="cft'+cj(cur.title)+'">'+esc(cur.title)+'</div>'
+          +'<div class="cfd">'+chip+(s.someday.length>1?'<span class="dots">'+s.someday.map((_,i)=>'<i'+(i===r?' class="on"':'')+'></i>').join('')+'</span>':'')+'</div></div>'
+          +'<div class="cfb"><div class="btn no" data-a="cancel">'+L.cancel+'<small>Hold OK</small></div><div class="btn yes" data-a="move">'+L.move+'<small>OK</small></div></div>'
+          +'<div class="hint" style="text-align:center">'+esc(L.auto(left))+'</div></div>');
+        return wrap();
+      }
+      const dots=s.someday.map((_,i)=>'<i'+(i===r?' class="on"':'')+'></i>').join('');
+      /* two lines only: label row + title row. When focused, the label itself says it's paused. */
+      const label='<div class="lb'+(sf?' ask':'')+'">'+(sf?L.paused:L.when)+'<span class="dots">'+dots+'</span></div>';
+      h.push('<div class="strip"><div class="sbox'+(sf?' f':'')+'" data-s="1">'+label+'<div class="sl'+(s.slide?' sl-'+s.slide:'')+'"><div class="ti mq'+cj(cur.title)+'"><span>'+esc(cur.title)+'</span></div>'+chip+'</div></div></div>');
+    }
+    if(s.toastT>0&&s.toast)h.push('<div class="toast">'+esc(s.toast)+'</div>');
+  }
+  else if(s.mode==='lock'){
+    const notes=LOCK.notes||[];
+    const now=new Date(), clk=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+    h.push('<div class="lkh"><span class="clk">'+(s.clock||clk)+'</span><div class="lks">'+battery(s)+'<span class="d">'+esc(L.lockDate(s.day))+'</span></div></div>');
+    let dots='';
+    if(!notes.length){
+      h.push('<div class="lkn'+(s.ui==='zh'?' cjk':'')+'" style="color:var(--s-muted);font-size:12px">'+L.noNotes+'</div>');
+    }else{
+      const i=s.lockIdx%notes.length, n=notes[i], m=L.noteTime(n.recorded_at);
+      h.push('<div class="lkn'+cj(n.excerpt)+'">'+esc(n.excerpt)+'</div><div class="lkm'+cj(m)+'">'+esc(m)+'</div>');
+      if(notes.length>1)dots='<span class="dots">'+notes.map((_,k)=>'<i'+(k===i?' class="on"':'')+'></i>').join('')+'</span>';
+    }
+    h.push('<div class="lkf">'+dots+'<span>'+L.lockHint+'</span></div>');
+  }
+  else if(s.mode==='recording'){
+    const t=s.elapsed, mm=Math.floor(t/60), ss=String(t%60).padStart(2,'0');
+    const bars=Array.from({length:20},(_,i)=>'<i style="height:'+(5+Math.abs(Math.sin((i+1)*1.7+t*2.3))*30).toFixed(0)+'px"></i>').join('');
+    h.push('<div class="rech'+(t%2?' blink':'')+'"><span class="r"><span class="rdot"></span>'+L.rec+'</span>'+(s.batt<=20&&!s.charging?battery(s):'<span style="color:var(--s-muted)">'+esc(L.day(s.day))+'</span>')+'</div>');
+    h.push('<div class="full"><div class="timer">'+mm+':'+ss+'</div><div class="wave">'+bars+'</div></div>');
+    h.push('<div class="foot">'+(s.recPausedSync?L.syncPaused:'')+L.stop+'</div>');
+  }
+  else if(s.mode==='saved'){
+    h.push('<div class="full">'+I.savedBig+'<div class="big">'+L.saved+'</div><div class="small">'+Math.floor(s.lastLen/60)+':'+String(s.lastLen%60).padStart(2,'0')+L.sep+L.onCard+'</div></div>');
+    h.push('<div class="foot">'+(s.online?L.syncNext:L.syncLater)+'</div>');
+  }
+  else if(s.mode==='syncing'){
+    const li=L.steps.map((l,i)=>{const c=s.phaseT>i?'ok':s.phaseT===i?'now':'';return '<li class="'+c+'"><span class="ic">'+(c==='ok'?I.done:c==='now'?I.spin:I.circ)+'</span>'+l+'</li>';}).join('');
+    h.push('<div class="full"><div style="font-size:15px;font-weight:700">'+L.syncing+'</div><ul class="steps">'+li+'</ul></div>');
+    h.push('<div class="foot">'+L.recAny+'</div>');
+  }
+  else if(s.mode==='error'){
+    const bat=s.err==='batt';
+    h.push('<div class="full">'+(bat?battery({batt:s.batt,charging:false},true):I.warn)+'<div class="big" style="font-size:18px">'+(bat?L.battLow:L.full)+'</div><div class="small">'+(bat?L.battLowSub:L.fullSub)+'</div></div>');
+    h.push('<div class="foot">'+L.dismiss+'</div>');
+  }
+  return wrap();
+}
+
+/* ---------- live prototype ---------- */
+const $=id=>document.getElementById(id);
+function log(m){S.log=[m,...S.log].slice(0,6)}
+/* Only touch the DOM when the screen actually changes, so scrolling text isn't restarted every tick. */
+let lastHtml='', stripDur=0;
+const SCROLL_PX_S=30;   /* ≈3.5 mm/s on the real panel */
+const MQ_HOLD=1000;     /* ms the start is shown before scrolling begins */
+const MQ_GAP=40;        /* px between the end of the text and its repeat */
+const mqStart=new Map(); /* text key → time its scroll started; survives redraws */
+let mqEls=[];
+function runMarquee(){
+  stripDur=0;mqEls=[];
+  const seen=new Set();
+  $('live').querySelectorAll('.mq').forEach(el=>{
+    const sp=el.firstElementChild;
+    if(!sp||el.scrollWidth-el.clientWidth<=2)return;
+    const text=sp.textContent, strip=!!el.closest('.strip'), key=(strip?'s:':'r:')+text;
+    seen.add(key);
+    if(!mqStart.has(key))mqStart.set(key,performance.now());
+    el.classList.add('run');
+    const w=sp.offsetWidth;                      /* one copy of the text */
+    /* text · gap · text — when the first copy has moved one full cycle, the second sits exactly where it began */
+    sp.textContent='';
+    sp.append(text,Object.assign(document.createElement('span'),{className:'mqgap'}),
+      Object.assign(document.createElement('span'),{textContent:text,ariaHidden:'true'}));
+    const cycle=w+MQ_GAP;
+    mqEls.push({sp,cycle,key});
+    if(strip)stripDur=(MQ_HOLD+cycle/SCROLL_PX_S*1000)/1000;
+  });
+  for(const k of [...mqStart.keys()])if(!seen.has(k))mqStart.delete(k);
+  mqFrame(performance.now(),true);
+}
+/* hold once when focus arrives, then move left at a constant speed and wrap seamlessly */
+function mqFrame(now,once){
+  for(const m of mqEls){
+    const run=Math.max(0,now-mqStart.get(m.key)-MQ_HOLD);
+    const x=(run/1000*SCROLL_PX_S)%m.cycle;
+    m.sp.style.transform='translateX('+(-x).toFixed(1)+'px)';
+  }
+  if(!once)requestAnimationFrame(mqFrame);
+}
+requestAnimationFrame(mqFrame);
+function draw(){
+  const html=screen(S);
+  if(html!==lastHtml){$('live').innerHTML=html;lastHtml=html;runMarquee();}
+  $('log').innerHTML=S.log.map(l=>'<li>'+esc(l)+'</li>').join('');
+  $('bPlus').classList.toggle('on',S.mode==='recording');
+  $('sOnline').setAttribute('aria-pressed',S.online);
+  $('sFull').setAttribute('aria-pressed',S.cardFull);
+  $('b78').setAttribute('aria-pressed',!S.charging&&S.batt===78);$('b15').setAttribute('aria-pressed',!S.charging&&S.batt===15);
+  $('b3').setAttribute('aria-pressed',!S.charging&&S.batt===3);$('bChg').setAttribute('aria-pressed',S.charging);
+  $('uiEn').setAttribute('aria-pressed',S.ui==='en');$('uiZh').setAttribute('aria-pressed',S.ui==='zh');
+  $('ctEn').setAttribute('aria-pressed',S.content==='en');$('ctZh').setAttribute('aria-pressed',S.content==='zh');
+}
+function plus(){
+  if(S.mode==='recording'){
+    S.lastLen=S.elapsed;S.mode='saved';S.phaseT=0;S.pending++;log('Saved to microSD ('+S.elapsed+'s)');
+  }else if(S.batt<=3&&!S.charging){
+    S.mode='error';S.err='batt';log('Recording refused — battery '+S.batt+'%');
+  }else if(S.cardFull){
+    S.mode='error';S.err='card';log('Write failed — card full');
+  }else{
+    S.recPausedSync=S.mode==='syncing';
+    if(S.recPausedSync)log('Recording takes priority — sync paused');
+    if(S.mode==='sleep'){S.fromSleep=true;log('PLUS woke the device');}
+    S.mode='recording';S.elapsed=0;S.confirm=false;log('Recording started');
+  }
+  draw();
+}
+function next(){
+  if(S.mode==='lock'){S.lockIdx++;S.lockT=0;draw();return;}
+  if(S.mode!=='list')return;
+  if(S.confirm){browse('l');return;}                       /* picker: next item */
+  /* Today: short loop — each task, then the When I Have Time line as ONE stop, then back to the top */
+  S.focus=(Math.min(S.focus,S.tasks.length)+1)%(S.tasks.length+1);
+  S.stripIdle=0;
+  draw();
+}
+function ok(){
+  if(S.mode==='error'){S.mode='list';draw();return;}
+  if(S.mode==='lock'){S.mode='list';log('Unlocked');draw();return;}
+  if(S.mode!=='list')return;
+  const n=S.tasks.length,f=Math.min(S.focus,n);
+  if(f<n){
+    const t=S.tasks[f];t.done=!t.done;S.changes++;
+    log((t.done?'Checked off':'Unchecked')+' “'+t.title+'” — queued for Pi');
+  }else if(S.someday.length){
+    const r=S.rot%S.someday.length;
+    if(!S.confirm){S.confirm=true;S.confirmT=0;}
+    else{
+      const t=S.someday.splice(r,1)[0];S.tasks.push({id:t.id,title:t.title,due:t.due});
+      S.confirm=false;S.rot=S.someday.length?r%S.someday.length:0;S.focus=S.tasks.length-1;S.changes++;
+      log('Moved “'+t.title+'” into Today'+(t.due!=null?' (still due '+DOW_EN[t.due%7]+')':''));
+    }
+  }
+  draw();
+}
+const RESULT_LOG={task:'Pi: errand with 2 details → Today',noteTask:'Pi: reflection → Obsidian/Miscellaneous, idea → When I Have Time',tomorrow:'Pi: “tomorrow” → dated by recording time'};
+function finishSync(){
+  let toast=[];
+  for(let i=0;i<S.pending;i++){
+    const r=S.results[S.resIdx%S.results.length];S.resIdx++;
+    const id=S.nextId++;
+    if(r.where==='today')S.tasks.push({id,title:r.title,detail:r.detail});
+    else if(r.where==='someday')S.someday.push({id,title:r.title});
+    else S.planned.push({id,title:r.title,day:S.day+1});
+    log(RESULT_LOG[r.t]);toast.push(T[S.ui].toast[r.t]);
+  }
+  if(S.changes)log('Sent '+S.changes+' change(s) → Obsidian');
+  if(!toast.length)toast=[T[S.ui].toast.synced];
+  S.pending=0;S.changes=0;S.mode='list';S.toast=toast.join(' · ');S.toastT=3;
+  backToSleep();
+  loadLock().then(()=>{log('Wi-Fi off');draw();});
+}
+function tick(){
+  if(S.mode==='lock'){if(++S.lockT>=(LOCK.interval_s||6)){S.lockT=0;S.lockIdx++;}}
+  else if(S.mode==='recording'){S.elapsed++;}
+  else if(S.mode==='saved'){
+    if(++S.phaseT>=2){
+      if(S.online){S.mode='syncing';S.phaseT=0;log('Wi-Fi on · campus EAP auth');}
+      else{S.mode='list';log('No network — kept pending, Wi-Fi off');backToSleep();}
+    }
+  }else if(S.mode==='syncing'){
+    if(!S.online){S.mode='list';log('Network lost — retry at next wake/recording');}
+    else if(++S.phaseT>=3)finishSync();
+  }else if(S.mode==='list'){
+    if(S.toastT>0)S.toastT--;
+    if(S.confirm&&++S.confirmT>=8){S.confirm=false;log('No answer — move cancelled');}
+    if(!S.confirm&&S.tasks.length>0&&Math.min(S.focus,S.tasks.length)===S.tasks.length&&++S.stripIdle>=10){S.focus=0;S.stripIdle=0;log('Idle 10 s — rotation resumes');}
+    const onStrip=Math.min(S.focus,S.tasks.length)===S.tasks.length;
+    /* rotate every 3 s, or after one full scroll of a long title */
+    if(!S.confirm&&!onStrip&&S.someday.length>1&&++S.rotT>=Math.max(3,Math.ceil(stripDur))){S.rotT=0;S.rot=(S.rot+1)%S.someday.length;}
+  }
+  draw();
+}
+function wake(){
+  if(S.mode!=='list'&&S.mode!=='lock')return;
+  if(S.pending+S.changes===0)log('Woke — nothing to sync');
+  else if(S.online){S.mode='syncing';S.phaseT=0;log('Woke — retrying sync');}
+  else log('Woke — still offline, Wi-Fi off');
+  draw();
+}
+function nextDay(){
+  if(S.mode!=='list'&&S.mode!=='lock')return;
+  const d=++S.day;
+  const kept=S.tasks.filter(t=>!t.done).map(t=>({...t,carried:true}));
+  const planned=S.planned.filter(p=>p.day===d).map(p=>({id:p.id,title:p.title}));
+  const auto=S.someday.filter(x=>x.due===d).map(x=>({id:x.id,title:x.title,due:x.due}));
+  S.planned=S.planned.filter(p=>p.day!==d);
+  S.someday=S.someday.filter(x=>x.due!==d);
+  S.tasks=kept.concat(planned,auto);S.focus=0;S.confirm=false;S.rot=0;
+  log('Midnight → '+T.en.day(d)+': '+kept.length+' carried, '+planned.length+' planned, '+auto.length+' due today');
+  draw();
+}
+$('bPlus').onclick=plus;
+
+/* ---------- Button gestures: press / hold (no double-press anywhere) ----------
+   Press acts on release, at once.
+   OK   hold 0.8 s = back one level: “Move to Today?” → Today → lock screen → sleep.
+   NEXT hold 0.8 s = sleep (shortcut from Today or the lock screen).
+   While holding, an overlay names the destination; release early to cancel. */
+const HOLD_MS=800;
+let holdTimer=null, holdShowTimer=null, held=false;
+const ICON_MOON='<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>';
+const ICON_BACK='<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>';
+const ICON_LOCK='<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>';
+const HOLD_LABEL={back:['Back','返回',ICON_BACK],lock:['Lock','锁屏',ICON_LOCK],sleep:['Sleep','休眠',ICON_MOON]};
+function showHold(target){
+  const ov=$('holdOv');
+  if(target){
+    const [en,zh,icon]=HOLD_LABEL[target];
+    ov.innerHTML='<div class="hob"><svg viewBox="0 0 24 24" width="1.6em" height="1.6em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+icon+'</svg><div>'+(S.ui==='zh'?zh:en)+'</div><div class="hobar"><i></i></div></div>';
+  }else ov.innerHTML='';
+  ov.classList.toggle('on',!!target);
+}
+function cancelHold(){clearTimeout(holdTimer);clearTimeout(holdShowTimer);showHold(null);}
+function goSleep(why){S.mode='sleep';S.confirm=false;S.fromSleep=false;log(why+' → sleep (screen off)');draw();}
+function toLock(why){S.mode='lock';S.lockT=0;S.confirm=false;S.focus=0;log(why+' → lock screen');draw();}
+function backToSleep(){if(S.fromSleep){S.fromSleep=false;S.mode='sleep';log('Back to sleep');}}
+/* where a hold of this button would go right now (null = hold does nothing) */
+function holdTarget(btn){
+  if(btn==='next')return (S.mode==='list'||S.mode==='lock')?'sleep':null;
+  if(S.mode==='list')return S.confirm?'back':'lock';
+  if(S.mode==='lock')return 'sleep';
+  return null;
+}
+function doHold(btn){
+  const t=holdTarget(btn);
+  if(t==='back')closePicker('Hold OK');
+  else if(t==='lock')toLock('Hold OK');
+  else if(t==='sleep')goSleep(btn==='ok'?'Hold OK':'Hold NEXT');
+}
+function wireButton(el,btn,press){
+  el.addEventListener('pointerdown',()=>{
+    held=false;
+    const t=holdTarget(btn);
+    if(!t)return;
+    holdShowTimer=setTimeout(()=>showHold(t),HOLD_MS-550);
+    holdTimer=setTimeout(()=>{held=true;showHold(null);doHold(btn);},HOLD_MS);
+  });
+  el.addEventListener('pointerup',()=>{cancelHold();if(held){held=false;return;}press();});
+  el.addEventListener('pointerleave',()=>{if(!held)cancelHold();});
+  el.addEventListener('contextmenu',e=>e.preventDefault()); /* long-press on touch devices */
+  el.addEventListener('click',e=>{if(e.detail===0)press();}); /* keyboard Enter/Space */
+}
+wireButton($('bOk'),'ok',ok);
+wireButton($('bNext'),'next',()=>{
+  if(S.mode==='sleep'){S.mode='lock';S.lockT=0;log('NEXT → wake to lock screen');draw();return;}
+  next();
+});
+$('sOnline').onclick=()=>{S.online=!S.online;log('Campus Wi-Fi '+(S.online?'available':'unavailable'));draw();};
+$('sFull').onclick=()=>{S.cardFull=!S.cardFull;draw();};
+const setBatt=(p,chg)=>{S.batt=p;S.charging=chg;log(chg?'Charging ('+p+'%)':'Battery '+p+'%');draw();};
+$('b78').onclick=()=>setBatt(78,false);$('b15').onclick=()=>setBatt(15,false);
+$('b3').onclick=()=>setBatt(3,false);$('bChg').onclick=()=>setBatt(S.batt,true);
+$('sWake').onclick=wake;$('sDay').onclick=nextDay;
+$('sLock').onclick=()=>{if(S.mode==='list'){S.mode='lock';S.lockT=0;S.confirm=false;log('Locked');draw();}};
+$('sReset').onclick=()=>{S=initial(S.ui,S.content);draw();};
+const setZoom=real=>{$('live').classList.toggle('real',real);$('live').parentElement.classList.toggle('real',real);$('zm2').setAttribute('aria-pressed',!real);$('zmReal').setAttribute('aria-pressed',real);};
+$('zm2').onclick=()=>setZoom(false);$('zmReal').onclick=()=>setZoom(true);
+$('uiEn').onclick=()=>{S.ui='en';draw();};
+$('uiZh').onclick=()=>{S.ui='zh';draw();};
+$('ctEn').onclick=()=>{if(S.content!=='en'){const ui=S.ui;S=initial(ui,'en');S.mode='list';draw();}};
+$('ctZh').onclick=()=>{if(S.content!=='zh'){const ui=S.ui;S=initial(ui,'zh');S.mode='list';draw();}};
+/* Swipe on the When I Have Time line: ← next item, → previous item.
+   Threshold 24 page px at 2× = 12 device px ≈ 1.4 mm (device: use ~20 px). */
+let slideT=null;
+/* picker browsing: l = next, r = previous; each step restarts the 8 s auto-cancel */
+function browse(dir){
+  const k=S.someday.length;
+  if(k>1){S.rot=(S.rot+(dir==='l'?1:-1)+k)%k;S.slide=dir;clearSlide();}
+  S.confirmT=0;draw();
+}
+function closePicker(why){S.confirm=false;S.focus=S.tasks.length;S.stripIdle=0;log(why+' — move cancelled');draw();}
+function clearSlide(){clearTimeout(slideT);slideT=setTimeout(()=>{S.slide='';draw();},320);}
+function swipe(dir){
+  const n=S.tasks.length, k=S.someday.length;
+  if(S.mode!=='list'||!k)return;
+  if(S.confirm){browse(dir);return;}
+  if(Math.min(S.focus,n)!==n)S.focus=n;
+  if(k>1){S.rot=(S.rot+(dir==='l'?1:-1)+k)%k;S.slide=dir;clearSlide();}
+  S.stripIdle=0;log('Swipe '+(dir==='l'?'←':'→')+' on When I Have Time');draw();
+}
+let sw=null, swallowClick=false;
+$('live').addEventListener('pointerdown',e=>{
+  sw=(S.mode==='list'&&(S.confirm?e.target.closest('.cf'):e.target.closest('.strip')))?{x:e.clientX,y:e.clientY}:null;
+});
+$('live').addEventListener('pointerup',e=>{
+  if(!sw)return;
+  const dx=e.clientX-sw.x, dy=e.clientY-sw.y; sw=null;
+  if(Math.abs(dx)>24&&Math.abs(dx)>Math.abs(dy)){swallowClick=true;swipe(dx<0?'l':'r');setTimeout(()=>swallowClick=false,0);}
+});
+$('live').addEventListener('click',e=>{
+  if(swallowClick){swallowClick=false;return;}
+  if(S.mode!=='list')return;
+  if(S.confirm){
+    const a=e.target.closest('[data-a]');
+    if(a&&a.dataset.a==='move')ok();
+    else if(a&&a.dataset.a==='cancel')closePicker('Cancel');
+    return;
+  }
+  const row=e.target.closest('[data-i]');
+  if(row){S.focus=+row.dataset.i;S.confirm=false;ok();return;}
+  if(e.target.closest('[data-s]')){if(Math.min(S.focus,S.tasks.length)!==S.tasks.length)S.stripEntry=S.rot%Math.max(1,S.someday.length);S.focus=S.tasks.length;ok();}
+});
+setInterval(tick,1000);
+draw();
+/* re-measure once web fonts arrive (widths change) */
+if(document.fonts)document.fonts.ready.then(()=>{lastHtml='';draw();});
+loadLock().then(renderGallery);
+
+/* ---------- static gallery ---------- */
+function renderGallery(){
+  const cell=([t,d,s])=>'<div class="cell"><div class="z">'+screen(s)+'</div><div><b>'+t+'</b><span>'+d+'</span></div></div>';
+  const base=(ui,ct)=>{const s=initial(ui,ct);s.mode='list';s.log=[];s.clock='07:45';return s;};
+  const notes=LOCK.notes||[];
+  const zhNote=Math.max(0,notes.findIndex(n=>CJK.test(n.excerpt)));
+  const enNote=Math.max(0,notes.findIndex(n=>!CJK.test(n.excerpt)));
+  let g;const G=[];
+  g=base();g.mode='lock';g.lockIdx=enNote;G.push(['Lock screen','Shows notes chosen on the computer. Touch is ignored.',g]);
+  g=base();G.push(['Today','Highlight on the first task. Carried-over tasks are labelled.',g]);
+  g=base();g.tasks[0].done=true;g.changes=1;g.online=false;G.push(['Checked off offline','The list updates right away and the change waits for the next sync.',g]);
+  g=base();g.focus=3;g.rot=1;g.confirm=true;G.push(['Browsing in Move to Today?','NEXT or a swipe shows the next task. OK moves it. Holding OK goes back.',g]);
+  g=base();g.focus=3;g.confirm=true;G.push(['Move to Today?','The line stops rotating so OK applies to the task on screen.',g]);
+  g=base();g.someday.shift();g.tasks.push({id:10,title:'Finish report draft',due:2});g.focus=3;G.push(['Moved early, deadline kept','Moved in on Wed and still shows “Due Fri”.',g]);
+  g=base();g.mode='recording';g.elapsed=7;G.push(['Recording','Starts as soon as PLUS is pressed, with the elapsed time on screen.',g]);
+  g=base();g.mode='saved';g.lastLen=12;G.push(['Saved','Shown only after the file is written to the microSD card.',g]);
+  g=base();g.mode='syncing';g.phaseT=2;G.push(['Syncing','Upload, then the Pi processes it. PLUS still records.',g]);
+  g=base();g.mode='error';G.push(['Card full','A write failure is shown on screen. Nothing fails silently.',g]);
+  g=base();g.batt=15;G.push(['Low battery','Battery turns orange at 20% and red at 10%. The percentage moves in 5% steps.',g]);
+  g=base();g.mode='error';g.err='batt';g.batt=3;G.push(['Battery too low','At 3% or below, recording is refused so a half-written file can’t be corrupted.',g]);
+  g=base();g.mode='lock';g.lockIdx=enNote;g.charging=true;g.batt=42;G.push(['Charging','A lightning bolt over the fill level.',g]);
+  g=base();g.tasks=[];G.push(['All clear','No tasks left today.',g]);
+  g=base();g.pending=1;g.online=false;G.push(['Waiting for Wi-Fi','The recording stays pending. It retries on the next wake or recording.',g]);
+  $('gallery').innerHTML=G.map(cell).join('');
+
+  const Z=[];
+  g=base('zh','zh');g.mode='lock';g.lockIdx=zhNote;Z.push(['锁屏 · Lock screen','15px Han text, 1.55 line height, up to 5 lines.',g]);
+  g=base('zh','zh');Z.push(['今天 · Today','14px task titles. Labels at 11px with no uppercase tracking.',g]);
+  g=base('zh','zh');g.focus=3;g.confirm=true;Z.push(['移到今天？ · Move to Today?','Two-line title limit. Buttons read 取消 / 移入.',g]);
+  g=base('zh','zh');g.someday.shift();g.tasks.push({id:10,title:'完成报告初稿',due:2});g.focus=3;Z.push(['提前移入 · Moved early','The deadline label reads 周五截止.',g]);
+  g=base('zh','zh');g.mode='recording';g.elapsed=7;Z.push(['录音中 · Recording','Same layout; the label is in Chinese.',g]);
+  g=base('zh','zh');g.mode='syncing';g.phaseT=1;Z.push(['同步中 · Syncing','Step labels in Chinese.',g]);
+  g=base('zh','zh');g.mode='error';Z.push(['存储卡已满 · Card full','The error message fits in two Chinese lines.',g]);
+  g=base('en','zh');g.tasks.push({id:30,title:'Print report 打印报告 at 3pm'});g.focus=1;Z.push(['Mixed · 中英混排','English labels, Chinese tasks. Each line is sized by its own script.',g]);
+  $('galleryZh').innerHTML=Z.map(cell).join('');
+}
+</script>
+</body>
+</html>

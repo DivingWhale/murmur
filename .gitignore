@@ -1,0 +1,22 @@
+# macOS / editors
+.DS_Store
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# ESP-IDF / PlatformIO build output
+build/
+sdkconfig.old
+.pio/
+managed_components/
+
+# Secrets — never commit
+.env
+*.pem
+*.key
+secrets.h
+wifi_credentials.*

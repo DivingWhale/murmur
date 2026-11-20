@@ -1,0 +1,41 @@
+{
+  "version": "2026-11-20T08:00:00Z",
+  "interval_s": 6,
+  "notes": [
+    {
+      "id": "note_2026-11-12_1804",
+      "recording_id": "rec_2026-11-12_1804",
+      "excerpt": "The best ideas this week came when I wasn't at the desk. Walk first, then write.",
+      "recorded_at": "2026-11-12T18:04:00+01:00",
+      "source": "Miscellaneous/2026-11-12 Evening walk.md"
+    },
+    {
+      "id": "note_2026-11-15_0922",
+      "recording_id": "rec_2026-11-15_0922",
+      "excerpt": "Asking one honest question in the seminar was easier than staying quiet.",
+      "recorded_at": "2026-11-15T09:22:00+01:00",
+      "source": "Miscellaneous/2026-11-15 After the seminar.md"
+    },
+    {
+      "id": "note_2026-11-16_2010",
+      "recording_id": "rec_2026-11-16_2010",
+      "excerpt": "组会上终于把实验设计讲清楚了。准备充分时，其实没那么紧张。",
+      "recorded_at": "2026-11-16T20:10:00+01:00",
+      "source": "Miscellaneous/2026-11-16 组会之后.md"
+    },
+    {
+      "id": "note_2026-11-17_0730",
+      "recording_id": "rec_2026-11-17_0730",
+      "excerpt": "散步的时候想明白了：先把问题写下来，答案常常就在问题里。",
+      "recorded_at": "2026-11-17T07:30:00+01:00",
+      "source": "Miscellaneous/2026-11-17 散步.md"
+    },
+    {
+      "id": "note_2026-11-17_2140",
+      "recording_id": "rec_2026-11-17_2140",
+      "excerpt": "Phone out of the bedroom made a real difference. Three nights in a row now.",
+      "recorded_at": "2026-11-17T21:40:00+01:00",
+      "source": "Miscellaneous/2026-11-17 Sleep.md"
+    }
+  ]
+}

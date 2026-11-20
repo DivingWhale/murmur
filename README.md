@@ -1,0 +1,41 @@
+# Murmur
+
+*Everyday voice capture in your pocket.*
+
+Press a button, say what you want to remember, and put the device back in your pocket. A Waveshare ESP32-S3-Touch-LCD-1.54 records to microSD. A Raspberry Pi on campus turns each recording into tasks and notes, and the notes go to Obsidian. The handheld shows today's tasks and works offline.
+
+## Start here
+
+| If you are working on… | Read |
+|---|---|
+| Anything | [docs/product-design.md](docs/product-design.md): what the system does and why |
+| Handheld UI / firmware | [docs/ui-spec.md](docs/ui-spec.md): **source of truth** for screens, controls, sizes and text |
+| Lock-screen notes (computer ↔ Pi ↔ handheld) | [docs/lockscreen-api.md](docs/lockscreen-api.md) |
+
+## Repository layout
+
+```
+docs/
+  product-design.md     system design (version 1)
+  ui-spec.md            handheld UI implementation spec
+  lockscreen-api.md     lock-screen notes API contract
+prototype/
+  index.html            interactive UI prototype (reference only)
+  api/v1/lockscreen.json  mock API response used by the prototype
+firmware/               (to be added) ESP32-S3 firmware
+```
+
+## Run the prototype
+
+```sh
+cd prototype && python3 -m http.server 8080
+# open http://localhost:8080
+```
+
+The prototype simulates the 240×240 screen and the three buttons (PLUS, NEXT, OK). Its *Screen states* section shows every screen at actual pixel size, in English and Chinese.
+
+## Working together
+
+- Work on a branch and open a pull request. Don't push straight to `main`.
+- If a change alters the UI behaviour, update `docs/ui-spec.md` in the same PR. The spec and the code must not disagree.
+- Keep secrets out of the repo, including API keys and campus Wi-Fi credentials. They belong on the Pi or in local config files that aren't committed.
