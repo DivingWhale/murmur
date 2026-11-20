@@ -4,45 +4,75 @@
 #include <Wire.h>
 #include <SD_MMC.h>
 #include <driver/i2s.h>
+#include <esp_heap_caps.h>
+#include <freertos/ringbuf.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <atomic>
+
+// Recording pipeline
+//
+//   I2S DMA (~190 ms) -> capture task -> ring buffer (4 s, PSRAM) -> writer task -> TF card
+//
+// The capture task blocks on I2S and only does gain and metering, so it keeps
+// up with the microphone whatever the UI, Wi-Fi or card are doing. The writer
+// task absorbs SD write latency. The main loop only polls for errors through
+// serviceRecording(). If the writer falls more than 4 s behind, samples are
+// dropped and counted; `levels` over serial reports the count.
 
 namespace {
 constexpr int rate = 16000;
+constexpr size_t ringBytes = 4 * rate * 2;   // 4 s of 16-bit mono
+constexpr size_t writeChunk = 4096;
+constexpr int captureCore = 1;                // Same core as loop(); Wi-Fi runs on core 0.
+constexpr UBaseType_t capturePriority = 6, writerPriority = 4; // loop() runs at 1.
+
 int file = -1;
-uint32_t bytesWritten, lastAudio;
-uint8_t level;
 char partial[80], finalPath[80];
 bool micRunning;
+
+uint8_t *ringStorage;
+StaticRingbuffer_t ringControl;
+RingbufHandle_t ring;
+SemaphoreHandle_t taskExited;
+int runningTasks;
+
+std::atomic<bool> stopCapture{false}, captureDone{false}, abandon{false};
+std::atomic<bool> micFailed{false}, writeFailed{false};
+std::atomic<uint32_t> capturedBytes{0}, bytesWritten{0}, droppedBytes{0};
+std::atomic<uint8_t> level{0};
+
+portMUX_TYPE statsLock = portMUX_INITIALIZER_UNLOCKED;
 uint64_t slotEnergy[2];
 uint32_t slotFrames;
-constexpr float speechGain=12.0f;
-float captureGain;
+
+constexpr float speechGain = 12.0f;
+float captureGain; // Capture task only.
 
 int16_t amplifySpeech(int16_t sample) {
     // Recover in about 180 ms after a tap. A transient reduces gain immediately.
-    constexpr float ceiling=29200.0f; // about -1 dBFS
-    captureGain+=(speechGain-captureGain)/(0.18f*rate);
-    const int magnitude=abs(int(sample));
-    if (magnitude*captureGain>ceiling) captureGain=ceiling/magnitude;
-    return int16_t(lrintf(sample*captureGain));
+    constexpr float ceiling = 29200.0f; // about -1 dBFS
+    captureGain += (speechGain - captureGain) / (0.18f * rate);
+    const int magnitude = abs(int(sample));
+    if (magnitude * captureGain > ceiling) captureGain = ceiling / magnitude;
+    return int16_t(lrintf(sample * captureGain));
 }
 
-bool writeCodec(uint8_t reg,uint8_t value) {
+bool writeCodec(uint8_t reg, uint8_t value) {
     Wire.beginTransmission(0x40);
     Wire.write(reg);
     Wire.write(value);
-    return Wire.endTransmission()==0;
+    return Wire.endTransmission() == 0;
 }
 
 void powerDownMic() {
-    writeCodec(0x4b,0xff);
-    writeCodec(0x4c,0xff);
-    writeCodec(0x40,0xc0);
-    writeCodec(0x01,0x7f);
-    writeCodec(0x06,0x07);
+    writeCodec(0x4b, 0xff);
+    writeCodec(0x4c, 0xff);
+    writeCodec(0x40, 0xc0);
+    writeCodec(0x01, 0x7f);
+    writeCodec(0x06, 0x07);
 }
 
 bool beginMic() {
@@ -74,52 +104,151 @@ bool beginMic() {
     pins.ws_io_num = 10;
     pins.data_out_num = -1;
     pins.data_in_num = 11;
-    if (i2s_set_pin(I2S_NUM_0,&pins)!=ESP_OK) {
+    if (i2s_set_pin(I2S_NUM_0, &pins) != ESP_OK) {
         i2s_driver_uninstall(I2S_NUM_0);
         return false;
     }
     for (auto &reg : regs) {
-        if (!writeCodec(reg[0],reg[1])) {
+        if (!writeCodec(reg[0], reg[1])) {
             powerDownMic();
             i2s_driver_uninstall(I2S_NUM_0);
             return false;
         }
     }
-    micRunning=true;
+    micRunning = true;
     return true;
 }
+
+void captureTask(void *) {
+    int16_t samples[512], mono[256];
+    uint32_t lastAudio = millis();
+    while (!stopCapture.load()) {
+        size_t n = 0;
+        if (i2s_read(I2S_NUM_0, samples, sizeof(samples), &n, pdMS_TO_TICKS(100)) != ESP_OK || n < 4) {
+            if (millis() - lastAudio > 1000) { micFailed = true; break; }
+            continue;
+        }
+        lastAudio = millis();
+        const size_t frames = n / 4;
+        int peak = 0;
+        uint64_t energy[2] = {0, 0};
+        for (size_t i = 0; i < frames; ++i) {
+            mono[i] = amplifySpeech(samples[2*i]);
+            peak = max(peak, abs(int(mono[i])));
+            for (int slot = 0; slot < 2; ++slot) {
+                int sample = samples[2*i + slot];
+                energy[slot] += sample * sample;
+            }
+        }
+        portENTER_CRITICAL(&statsLock);
+        slotEnergy[0] += energy[0]; slotEnergy[1] += energy[1]; slotFrames += frames;
+        portEXIT_CRITICAL(&statsLock);
+        level = min(20, peak / 500);
+        // Never block here: a stalled writer must not stall the microphone.
+        if (xRingbufferSend(ring, mono, frames * 2, 0) == pdTRUE) capturedBytes += frames * 2;
+        else droppedBytes += frames * 2;
+    }
+    captureDone = true;
+    xSemaphoreGive(taskExited);
+    vTaskDelete(nullptr);
+}
+
+void writerTask(void *) {
+    for (;;) {
+        // Check before receiving so the last items are drained after capture stops.
+        const bool finished = captureDone.load();
+        size_t size = 0;
+        void *data = xRingbufferReceiveUpTo(ring, &size, finished ? 0 : pdMS_TO_TICKS(50), writeChunk);
+        if (!data) {
+            if (finished) break;
+            continue;
+        }
+        bool ok = abandon.load() || writeFailed.load();
+        if (!ok) {
+            ok = bytesWritten.load() + size <= 0xfff00000u && write(file, data, size) == ssize_t(size);
+            if (ok) bytesWritten += size;
+            else writeFailed = true; // Keep draining so the capture task never blocks.
+        }
+        vRingbufferReturnItem(ring, data);
+    }
+    xSemaphoreGive(taskExited);
+    vTaskDelete(nullptr);
+}
+
+bool prepareRing() {
+    if (!ringStorage) {
+        ringStorage = static_cast<uint8_t *>(heap_caps_malloc(ringBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        taskExited = xSemaphoreCreateCounting(2, 0);
+        if (!ringStorage || !taskExited) return false;
+    }
+    if (ring) vRingbufferDelete(ring);
+    ring = xRingbufferCreateStatic(ringBytes, RINGBUF_TYPE_BYTEBUF, ringStorage, &ringControl);
+    return ring != nullptr;
+}
+
+bool startTasks() {
+    stopCapture = captureDone = abandon = false;
+    micFailed = writeFailed = false;
+    capturedBytes = bytesWritten = droppedBytes = 0;
+    level = 0;
+    runningTasks = 0;
+    if (!prepareRing()) return false;
+    // Start the writer first so it is already waiting when audio arrives.
+    if (xTaskCreatePinnedToCore(writerTask, "rec-write", 4096, nullptr, writerPriority, nullptr, captureCore) != pdPASS)
+        return false;
+    ++runningTasks;
+    if (xTaskCreatePinnedToCore(captureTask, "rec-capture", 4096, nullptr, capturePriority, nullptr, captureCore) != pdPASS) {
+        captureDone = true; // Lets the writer exit.
+        return false;
+    }
+    ++runningTasks;
+    return true;
+}
+
+void stopTasks() {
+    stopCapture = true;
+    // The capture task wakes within one I2S timeout; the writer then drains up to 4 s of audio.
+    while (runningTasks > 0 && xSemaphoreTake(taskExited, pdMS_TO_TICKS(5000)) == pdTRUE) --runningTasks;
+    if (runningTasks > 0) {
+        // Never expected. Leave the file open rather than close it under a running writer.
+        writeFailed = true;
+    }
+}
+
 void closeSession() {
+    stopTasks();
     if (micRunning) {
         powerDownMic();
         i2s_driver_uninstall(I2S_NUM_0);
     }
     micRunning = false;
-    if (file >= 0) close(file);
-    file = -1;
+    if (file >= 0 && runningTasks == 0) { close(file); file = -1; }
     SD_MMC.end();
     releaseCardAfterRecording();
 }
+
 struct WavHeader {
     char riff[4]; uint32_t riffSize; char wave[4], fmt[4]; uint32_t fmtSize;
     uint16_t pcm, channels; uint32_t sampleRate, byteRate; uint16_t align, bits;
     char data[4]; uint32_t dataSize;
 };
 static_assert(sizeof(WavHeader) == 44, "PCM WAV header");
-bool writeHeader() {
-    WavHeader h{{'R','I','F','F'}, 36+bytesWritten, {'W','A','V','E'}, {'f','m','t',' '}, 16,
-                1, 1, rate, rate*2, 2, 16, {'d','a','t','a'}, bytesWritten};
-    return lseek(file,0,SEEK_SET) == 0 && write(file,&h,sizeof(h)) == sizeof(h);
+bool writeHeader(uint32_t dataBytes) {
+    WavHeader h{{'R','I','F','F'}, 36 + dataBytes, {'W','A','V','E'}, {'f','m','t',' '}, 16,
+                1, 1, rate, rate*2, 2, 16, {'d','a','t','a'}, dataBytes};
+    return lseek(file, 0, SEEK_SET) == 0 && write(file, &h, sizeof(h)) == sizeof(h);
 }
 }
 
 AudioResult startRecording() {
-    bytesWritten = level = 0;
-    captureGain=speechGain;
-    slotFrames=0;
-    slotEnergy[0]=slotEnergy[1]=0;
+    captureGain = speechGain;
+    portENTER_CRITICAL(&statsLock);
+    slotFrames = 0;
+    slotEnergy[0] = slotEnergy[1] = 0;
+    portEXIT_CRITICAL(&statsLock);
     takeCardForRecording();
-    SD_MMC.setPins(cardPins::clk,cardPins::cmd,cardPins::d0,cardPins::d1,cardPins::d2,cardPins::d3);
-    if (!SD_MMC.begin("/sdcard",false,false) ||
+    SD_MMC.setPins(cardPins::clk, cardPins::cmd, cardPins::d0, cardPins::d1, cardPins::d2, cardPins::d3);
+    if (!SD_MMC.begin("/sdcard", false, false) ||
         (!SD_MMC.exists("/murmur") && !SD_MMC.mkdir("/murmur"))) {
         closeSession();
         return AudioResult::Card;
@@ -130,66 +259,60 @@ AudioResult startRecording() {
     }
     // O_EXCL protects interrupted files. A random suffix also works before clock sync.
     for (int attempt = 0; attempt < 8; ++attempt) {
-        time_t now=time(nullptr);
-        char stamp[24]="unset";
-        if (now>=1704067200) {
+        time_t now = time(nullptr);
+        char stamp[24] = "unset";
+        if (now >= 1704067200) {
             struct tm local{};
-            localtime_r(&now,&local);
-            strftime(stamp,sizeof(stamp),"%Y%m%d-%H%M%S",&local);
+            localtime_r(&now, &local);
+            strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &local);
         }
-        snprintf(finalPath,sizeof(finalPath),"/sdcard/murmur/rec-%s-%08lx.wav",stamp,(unsigned long)esp_random());
-        snprintf(partial,sizeof(partial),"%s.part", finalPath);
+        snprintf(finalPath, sizeof(finalPath), "/sdcard/murmur/rec-%s-%08lx.wav", stamp, (unsigned long)esp_random());
+        snprintf(partial, sizeof(partial), "%s.part", finalPath);
         struct stat info;
-        if (stat(finalPath,&info) == 0) continue;
-        file = open(partial,O_WRONLY|O_CREAT|O_EXCL,0666);
+        if (stat(finalPath, &info) == 0) continue;
+        file = open(partial, O_WRONLY|O_CREAT|O_EXCL, 0666);
         if (file >= 0 || errno != EEXIST) break;
     }
-    if (file < 0 || !writeHeader()) {
+    if (file < 0 || !writeHeader(0)) {
         closeSession();
         return AudioResult::Write;
     }
-    lastAudio = millis();
-    return AudioResult::Ok;
-}
-AudioResult serviceRecording() {
-    int16_t samples[512], mono[256];
-    size_t n = 0;
-    if (i2s_read(I2S_NUM_0,samples,sizeof(samples),&n,0) == ESP_OK && n >= 4) {
-        size_t frames = n/4;
-        int peak = 0;
-        for (size_t i = 0; i < frames; ++i) {
-            mono[i] = amplifySpeech(samples[2*i]);
-            peak = max(peak,abs(int(mono[i])));
-            for (int slot=0;slot<2;++slot) {
-                int sample=samples[2*i+slot];
-                slotEnergy[slot]+=sample*sample;
-            }
-        }
-        slotFrames+=frames;
-        level = min(20,peak / 500);
-        if (bytesWritten > 0xfff00000u || write(file,mono,frames*2) != ssize_t(frames*2)) {
-            closeSession();
-            return AudioResult::Write;
-        }
-        bytesWritten += frames*2;
-        lastAudio = millis();
-    } else if (millis()-lastAudio > 1000) {
+    if (!startTasks()) {
         closeSession();
-        return AudioResult::Mic;
+        return AudioResult::Write;
     }
     return AudioResult::Ok;
 }
+
+AudioResult serviceRecording() {
+    if (writeFailed.load()) { closeSession(); return AudioResult::Write; }
+    if (micFailed.load()) { closeSession(); return AudioResult::Mic; }
+    return AudioResult::Ok;
+}
+
 AudioResult finishRecording() {
-    bool ok = bytesWritten && writeHeader() && fsync(file) == 0;
-    if (close(file) != 0) ok = false;
-    file = -1;
-    if (ok) ok = rename(partial,finalPath) == 0;
+    stopTasks();
+    bool ok = runningTasks == 0 && !writeFailed.load() && bytesWritten.load() &&
+              writeHeader(bytesWritten.load()) && fsync(file) == 0;
+    if (runningTasks == 0) {
+        if (close(file) != 0) ok = false;
+        file = -1;
+    }
+    if (ok) ok = rename(partial, finalPath) == 0;
     closeSession();
     return ok ? AudioResult::Ok : AudioResult::Write;
 }
-uint32_t recordedSeconds() { return bytesWritten / (rate*2); }
+
+// While recording this counts audio captured so far; afterwards it is the saved length.
+uint32_t recordedSeconds() {
+    return (file >= 0 ? capturedBytes.load() : bytesWritten.load()) / (rate*2);
+}
+
 bool discardRecording() {
     if (file < 0) return false;
+    abandon = true;
+    stopTasks();
+    if (runningTasks > 0) { closeSession(); return false; }
     close(file);
     file = -1;
     // This session exclusively created partial. Never remove a finalized WAV.
@@ -197,12 +320,18 @@ bool discardRecording() {
     closeSession();
     return removed;
 }
-uint8_t audioLevel() { return level; }
+
+uint8_t audioLevel() { return level.load(); }
+
 void printMicLevels(Print &out) {
-    out.printf("mic-speech-v3 frames=%lu",(unsigned long)slotFrames);
-    for (int slot=0;slot<2;++slot) {
-        double meanSquare=slotFrames ? double(slotEnergy[slot])/slotFrames : 0;
-        out.printf(" slot%d_rms_dBFS=%.1f",slot,meanSquare>0 ? 10*log10(meanSquare/(32768.0*32768.0)) : -120.0);
+    portENTER_CRITICAL(&statsLock);
+    const uint32_t frames = slotFrames;
+    const uint64_t energy[2] = {slotEnergy[0], slotEnergy[1]};
+    portEXIT_CRITICAL(&statsLock);
+    out.printf("mic-speech-v4 frames=%lu", (unsigned long)frames);
+    for (int slot = 0; slot < 2; ++slot) {
+        double meanSquare = frames ? double(energy[slot]) / frames : 0;
+        out.printf(" slot%d_rms_dBFS=%.1f", slot, meanSquare > 0 ? 10*log10(meanSquare/(32768.0*32768.0)) : -120.0);
     }
-    out.println();
+    out.printf(" dropped_ms=%lu\n", (unsigned long)(droppedBytes.load() / (rate*2/1000)));
 }
