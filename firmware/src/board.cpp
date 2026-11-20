@@ -90,6 +90,10 @@ void boardBegin() {
     lv_disp_drv_register(&display);
 }
 uint32_t displayFrames() { return frames.load(); }
+void setLowPower(bool low) {
+    const uint32_t mhz=low?80:240;
+    if (getCpuFrequencyMhz()!=mhz) setCpuFrequencyMhz(mhz);
+}
 void setBacklight(uint8_t percent) { ledcWrite(0,(percent*255+50)/100); }
 void releaseBatteryPower() { digitalWrite(batteryEnable, LOW); }
 bool charging() { return digitalRead(3) == LOW; }

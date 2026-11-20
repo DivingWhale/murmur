@@ -85,6 +85,7 @@ void boardBegin() {
 void releaseBatteryPower() {}
 void setBacklight(uint8_t percent) { backlight = percent; }
 uint32_t displayFrames() { return 0; }
+void setLowPower(bool) {}
 int batteryPercent() { return simBattery; }
 bool charging() { return simCharging; }
 Contact readContact(int &x, int &y) {

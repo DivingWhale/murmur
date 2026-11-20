@@ -137,6 +137,7 @@ void go(Screen target) {
     screen=target;
     lastInput=entered=interacted=rotated=millis();
     dirty=true;
+    setLowPower(target==Screen::Sleep);
     setBacklight(target==Screen::Sleep?0:brightness*5);
     if (waking) startCampusWifiOnWake();
 }
@@ -157,6 +158,7 @@ void recordKey() {
         return;
     }
     sleepAfter=screen==Screen::Sleep;
+    setLowPower(false); // Full speed before the microphone and card start.
     battery=batteryPercent();
     if (battery>=0 && battery<=3 && !charging()) {
         showError("电量过低","Battery too low");
