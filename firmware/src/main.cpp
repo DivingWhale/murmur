@@ -1036,6 +1036,16 @@ void updateView(uint32_t now) {
     }
     if (chargeChanged || levelChanged) refreshBatteryWidgets();
 }
+// Display refresh rate over the last second and the slowest loop since the last `perf`.
+uint32_t measuredFps, slowestLoop;
+void measurePerformance(uint32_t now,uint32_t loopStart) {
+    static uint32_t windowStart, framesAtStart;
+    slowestLoop=max(slowestLoop,now-loopStart);
+    if (now-windowStart<1000) return;
+    const uint32_t frames=displayFrames();
+    measuredFps=(frames-framesAtStart)*1000/(now-windowStart);
+    windowStart=now; framesAtStart=frames;
+}
 void serialSettings() {
     static char buf[288];
     static bool overflow=false;
@@ -1051,6 +1061,9 @@ void serialSettings() {
             if (screen==Screen::Settings || screen==Screen::Panel) dirty=true;
         } else if (!strcmp(buf,"en") || !strcmp(buf,"zh")) {
             en=!strcmp(buf,"en"); prefs.putBool("english",en); dirty=true;
+        } else if (!strcmp(buf,"perf")) {
+            usbSerial.printf("perf fps=%lu loop_max_ms=%lu\n",(unsigned long)measuredFps,(unsigned long)slowestLoop);
+            slowestLoop=0;
         } else if (!strcmp(buf,"levels")) {
             printMicLevels(usbSerial);
         } else if (!strncmp(buf,"time ",5)) {
@@ -1098,6 +1111,7 @@ void setup() {
 }
 void loop() {
     uint32_t now=millis();
+    const uint32_t loopStart=now;
     lv_tick_inc(now-lastTick); lastTick=now;
     // Breadcrumb codes for `wifi diag`: see docs/campus-wifi.md.
     diagLoopPhase(1);
@@ -1128,5 +1142,6 @@ void loop() {
     diagLoopPhase(7);
     lv_timer_handler();
     diagLoopPhase(8);
+    measurePerformance(millis(),loopStart);
     delay(screen==Screen::Sleep?10:2);
 }

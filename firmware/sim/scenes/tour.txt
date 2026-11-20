@@ -1,0 +1,57 @@
+# Every screen once, in English. Output: <out>/<name>.png
+sheet tour
+serial en
+wait 600
+snap
+film unlock 360 30
+press ok
+wait 400
+snap
+press next
+wait 300
+snap
+press next
+press next
+press next
+wait 300
+snap
+film page-swipe 420 30
+swipe 180 100 40 100 120
+wait 400
+snap
+swipe 180 100 40 100 120
+wait 400
+snap
+swipe 60 100 200 100 120
+swipe 60 100 200 100 120
+wait 400
+film panel-open 360 30
+swipe 120 6 120 120 100
+wait 400
+snap
+tap 120 200
+wait 400
+snap
+tap 20 16
+wait 300
+press ok
+wait 400
+press plus
+wait 2300
+snap
+press next
+wait 300
+snap
+press next
+press ok
+wait 300
+film saved 400 40
+press plus
+wait 400
+snap
+wait 2000
+down ok
+wait 600
+snap
+up ok
+wait 400
