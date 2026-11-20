@@ -117,6 +117,7 @@ void go(Screen target) {
         settlePage(pageIndex(target));
         return;
     }
+    const bool waking=screen==Screen::Sleep && target!=Screen::Sleep && target!=Screen::Recording;
     if (target==Screen::Panel) pageMotion=screen==Screen::Settings?Motion::Right:Motion::Down;
     else if (screen==Screen::Panel) pageMotion=target==Screen::Settings?Motion::Left:Motion::Up;
     else if (screen==Screen::Lock && target==Screen::Today) pageMotion=Motion::Up;
@@ -124,6 +125,7 @@ void go(Screen target) {
     lastInput=entered=interacted=rotated=millis();
     dirty=true;
     setBacklight(target==Screen::Sleep?0:brightness*5);
+    if (waking) startCampusWifiOnWake();
 }
 void showError(const char *zh,const char *english) {
     faultZh=zh; faultEn=english; go(Screen::Error);
@@ -137,7 +139,8 @@ void audioError(AudioResult r) {
 void recordKey() {
     if (recordingActive()) {
         auto result=finishRecording();
-        if (result==AudioResult::Ok) go(Screen::Saved); else audioError(result);
+        if (result==AudioResult::Ok) { go(Screen::Saved); startSavedCampusWifi(); } // Upload point once the Pi sync exists.
+        else audioError(result);
         return;
     }
     sleepAfter=screen==Screen::Sleep;
