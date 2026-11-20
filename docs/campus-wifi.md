@@ -67,7 +67,13 @@ Rules:
 
 ## Getting credentials onto the device
 
-From the repository root on Windows, start a manual Wi-Fi session with the project Python environment:
+From the repository root, start a manual Wi-Fi session with the project Python environment. On macOS or Linux:
+
+```sh
+work/venv/bin/python firmware/tools/join_campus.py --pi <Pi campus IP>
+```
+
+On Windows:
 
 ```powershell
 $piAddress = Read-Host "Enter the Pi's campus IP address"
