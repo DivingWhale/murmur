@@ -6,7 +6,17 @@ Press a button, say what you want to remember, and put the device back in your p
 
 The Waveshare ESP32-S3-Touch-LCD-1.54 is the sole capture device. The proposed control is the **PLUS** button. Press it once to start recording immediately. The screen shows that recording is active and displays the elapsed time. Press it again to stop.
 
-Show **Saved** as soon as the recording has been written successfully to local storage. A microSD card is the proposed storage medium. If the card is full or a write fails, show the error on screen. Starting a new recording takes priority over background synchronization.
+Show **Saved** as soon as the recording has been written successfully to the microSD (TF) card. If the card is full or a write fails, show the error on screen. Starting a new recording takes priority over background synchronization.
+
+## USB access to the TF card
+
+With the card inserted and the USB cable left connected, a firmware update must restore both the serial console and read-only access to the whole card automatically. Windows assigns the COM number and drive letter. During recording, the handheld has exclusive access to the card. It makes the card available to the host again after closing the WAV.
+
+The firmware first presents the serial console and an empty removable reader. After the host configures USB, wait at least four seconds before reporting the card as present. A background task initializes the card and checks its status. The USB readiness and capacity callbacks return the cached result immediately so the device can keep answering USB requests while the card comes online.
+
+**Regression check.** Inventory the WAVs, leave the card and cable in place, and flash the application four times in succession. After each restart, verify an actual serial response and automatic volume mounting. Check that the connection remains available for 45 seconds, then read every WAV end to end and compare file names and sizes with the inventory.
+
+**Hardware baseline, 2026-11-21.** On the USB-powered test unit, four consecutive flashes restored COM5 and drive F automatically. Windows mounted the volume about 22 seconds after COM5 appeared. The final three runs passed the 45-second check and all 11 existing WAVs were readable. Repeating this test with the battery connected remains open.
 
 ## Turning speech into notes and tasks
 

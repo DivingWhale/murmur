@@ -9,6 +9,7 @@ Press a button, say what you want to remember, and put the device back in your p
 | If you are working on… | Read |
 |---|---|
 | Anything | [docs/product-design.md](docs/product-design.md): what the system does and why |
+| USB serial, TF card access or post-flash mounting | [USB startup sequence and hardware regression check](docs/product-design.md#usb-access-to-the-tf-card) |
 | Handheld UI / firmware | [docs/ui-spec.md](docs/ui-spec.md): **source of truth** for screens, controls, sizes and text |
 | Lock-screen notes (computer ↔ Pi ↔ handheld) | [docs/lockscreen-api.md](docs/lockscreen-api.md) |
 | Claude usage page (5-hour / weekly limits) | [docs/claude-usage-api.md](docs/claude-usage-api.md) |
