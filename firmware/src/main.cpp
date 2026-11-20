@@ -6,6 +6,7 @@
 #include <cstring>
 #include <USB.h>
 #include "fonts.h"
+#include "icons.h"
 #include <Preferences.h>
 #include <esp_task_wdt.h>
 #include <sys/time.h>
@@ -45,7 +46,7 @@ void positionTrack(void *track,int32_t x) {
     lv_obj_set_x(static_cast<lv_obj_t*>(track),x);
 }
 constexpr uint32_t bg=0x0b0c0e, surface=0x1c1f24, line=0x262a30, ink=0xf4f3ef,
-    muted=0x9ca0a8, dim=0x6b7079, yellow=0xffd23f, red=0xff5c4d, due=0xffb067;
+    muted=0x9ca0a8, dim=0x6b7079, yellow=0xffd23f, red=0xff5c4d, due=0xffb067, syncBlue=0x6cb6ff;
 Preferences prefs;
 bool en, sleepAfter, dirty=true;
 bool powerHoldStarted=false;
@@ -59,8 +60,22 @@ bool showCompleted=false, revealFocus=false;
 lv_obj_t *taskList;
 uint32_t entered, interacted, rotated, lastBattery, lastTick, scrollPeriod=3000;
 uint16_t taskState; // Bits 0..5 completed, bits 8..13 promoted into Today.
+// Local changes not yet sent to the Pi (task edits and recordings). Cleared by a successful sync,
+// which does not exist yet, so the header shows them as waiting.
+uint16_t pendingChanges;
+void notePendingChange() { ++pendingChanges; prefs.putUShort("pending",pendingChanges); }
 const char *faultZh="", *faultEn="";
 lv_obj_t *timerLabel, *recordDot, *bars[20], *countdown, *clockLabel, *dateLabel;
+// Recent input levels (0-20), oldest first, drawn as a scrolling waveform of 5-35 px bars.
+uint8_t wave[20];
+uint32_t waveSampled;
+void paintWave() {
+    for (int i=0;i<20;++i) {
+        const int h=5+wave[i]*30/20;
+        lv_obj_set_height(bars[i],h);
+        lv_obj_set_y(bars[i],138-h/2);
+    }
+}
 lv_obj_t *overlay, *progressFill;
 lv_obj_t *tickerTitle, *tickerChip, *tickerDots[6];
 lv_anim_t scrollAnimation;
@@ -122,6 +137,8 @@ void go(Screen target) {
     if (target==Screen::Panel) pageMotion=screen==Screen::Settings?Motion::Right:Motion::Down;
     else if (screen==Screen::Panel) pageMotion=target==Screen::Settings?Motion::Left:Motion::Up;
     else if (screen==Screen::Lock && target==Screen::Today) pageMotion=Motion::Up;
+    else if (screen==Screen::Settings && (target==Screen::Brightness || target==Screen::SetClock)) pageMotion=Motion::Left;
+    else if ((screen==Screen::Brightness || screen==Screen::SetClock) && target==Screen::Settings) pageMotion=Motion::Right;
     screen=target;
     lastInput=entered=interacted=rotated=millis();
     dirty=true;
@@ -140,18 +157,18 @@ void audioError(AudioResult r) {
 void recordKey() {
     if (recordingActive()) {
         auto result=finishRecording();
-        if (result==AudioResult::Ok) { go(Screen::Saved); startSavedCampusWifi(); } // Upload point once the Pi sync exists.
+        if (result==AudioResult::Ok) { notePendingChange(); go(Screen::Saved); startSavedCampusWifi(); } // Upload point once the Pi sync exists.
         else audioError(result);
         return;
     }
     sleepAfter=screen==Screen::Sleep;
     battery=batteryPercent();
     if (battery>=0 && battery<=3 && !charging()) {
-        showError("电量过低，请先充电","Battery too low to record");
+        showError("电量过低","Battery too low");
         return;
     }
     auto result=startRecording();
-    if (result==AudioResult::Ok) { recordingFrom=screen; go(Screen::Recording); }
+    if (result==AudioResult::Ok) { memset(wave,0,sizeof(wave)); recordingFrom=screen; go(Screen::Recording); }
     else audioError(result);
 }
 void askDiscard() {
@@ -199,11 +216,19 @@ void dots(int x,int y,int count,int selected) {
     for (int i=0;i<count;++i) box(x+i*9,y,5,5,i==selected?ink:dim,3);
 }
 constexpr int batteryIconWidth=76, batteryIconHeight=26;
+void batteryText(char (&text)[8]) {
+    strcpy(text,"--");
+    if (battery>=0) snprintf(text,sizeof(text),"%d%%",max(battery>0?1:0,(battery+2)/5*5));
+}
+// Width of the drawn battery indicator (glyph, gap and percentage), for laying out what sits to its left.
+int batteryContentWidth() {
+    char text[8]; batteryText(text);
+    return lv_txt_get_width(text,strlen(text),fontFor(en?13:14),0,LV_TEXT_FLAG_NONE)+3+22;
+}
 void paintBatteryIcon(lv_obj_t *icon) {
     lv_obj_clean(icon);
     uint32_t color=isCharging || battery<0 || battery>20?muted:(battery<=10?red:due);
-    char text[8]="--";
-    if (battery>=0) snprintf(text,sizeof(text),"%d%%",max(battery>0?1:0,(battery+2)/5*5));
+    char text[8]; batteryText(text);
     const auto *font=fontFor(en?13:14);
     int width=lv_txt_get_width(text,strlen(text),font,0,LV_TEXT_FLAG_NONE);
     int x=batteryIconWidth-width-3-22, y=batteryIconHeight/2-6;
@@ -263,6 +288,7 @@ void refreshClock() {
     if (clockLabel) lv_label_set_text(clockLabel,hm);
     if (dateLabel) lv_label_set_text(dateLabel,date);
 }
+// Motion follows the prototype's CSS: every animation eases out.
 void translate(lv_obj_t *obj,int start,int end,bool vertical,int ms) {
     lv_anim_t a;
     lv_anim_init(&a); lv_anim_set_var(&a,obj);
@@ -271,10 +297,46 @@ void translate(lv_obj_t *obj,int start,int end,bool vertical,int ms) {
     lv_anim_set_values(&a,start,end); lv_anim_set_time(&a,ms);
     lv_anim_set_path_cb(&a,lv_anim_path_ease_out); lv_anim_start(&a);
 }
+void fade(lv_obj_t *obj,lv_opa_t from,int ms) {
+    lv_obj_set_style_opa(obj,from,0);
+    lv_anim_t a;
+    lv_anim_init(&a); lv_anim_set_var(&a,obj);
+    lv_anim_set_exec_cb(&a,[](void *p,int32_t v){lv_obj_set_style_opa(static_cast<lv_obj_t*>(p),lv_opa_t(v),0);});
+    lv_anim_set_values(&a,from,LV_OPA_COVER); lv_anim_set_time(&a,ms);
+    lv_anim_set_path_cb(&a,lv_anim_path_ease_out); lv_anim_start(&a);
+}
+// A screen enters 40 px from its direction of travel while fading in from 20% (CSS pgL/pgR/pgU/pgD).
+void enter(lv_obj_t *obj,Motion motion) {
+    const bool vertical=motion==Motion::Up || motion==Motion::Down;
+    const int ms=motion==Motion::Up?300:(motion==Motion::Down?280:260);
+    translate(obj,motion==Motion::Down || motion==Motion::Right?-40:40,0,vertical,ms);
+    fade(obj,LV_OPA_20,ms);
+    motionEnds=millis()+ms;
+}
+// Edge bounce (CSS pgBL/pgBR): 30% -> 14 px toward the swipe, 65% -> 4 px back, then rest; 0.34 s.
+void bounce(lv_obj_t *obj,int direction) {
+    lv_anim_t a;
+    lv_anim_init(&a); lv_anim_set_var(&a,obj);
+    lv_anim_set_user_data(&a,reinterpret_cast<void*>(intptr_t(direction)));
+    lv_anim_set_custom_exec_cb(&a,[](lv_anim_t *anim,int32_t t){
+        const int dir=int(intptr_t(anim->user_data));
+        auto ease=[](int32_t from,int32_t to,int32_t num,int32_t den){ // ease-out cubic per keyframe
+            const float x=float(num)/den, e=1-(1-x)*(1-x)*(1-x);
+            return int32_t(lroundf(from+(to-from)*e));
+        };
+        int32_t x;
+        if (t<300) x=ease(0,14,t,300);
+        else if (t<650) x=ease(14,-4,t-300,350);
+        else x=ease(-4,0,t-650,350);
+        lv_obj_set_style_translate_x(static_cast<lv_obj_t*>(anim->var),dir*x,0);
+    });
+    lv_anim_set_values(&a,0,1000); lv_anim_set_time(&a,340);
+    lv_anim_start(&a);
+}
 void animateNote(lv_obj_t *obj) {
     if (slideDirection) {
         translate(obj,28*slideDirection,0,false,280);
-        lv_obj_fade_in(obj,280,0);
+        fade(obj,LV_OPA_TRANSP,280);
     }
 }
 void lockView() {
@@ -319,6 +381,18 @@ void updateTicker(int *later,int count) {
     scrollPeriod=textWidth<=width?3000:1000+(textWidth+40)*1000/30;
     animateNote(tickerTitle); animateNote(tickerChip);
 }
+// Compact sync status left of the battery: a check when nothing is waiting, otherwise an icon and the count.
+void syncStatus(int right,int cy) {
+    auto *parent=panelRoot?panelRoot:pageLayer;
+    if (!pendingChanges) { icon(parent,Icon::Check,11,right-11,cy-6,muted); return; }
+    char count[8]; snprintf(count,sizeof(count),"%u",unsigned(pendingChanges));
+    const bool online=campusOnline();
+    const uint32_t color=online?syncBlue:muted;
+    const int w=lv_txt_get_width(count,strlen(count),fontFor(13),0,LV_TEXT_FLAG_NONE);
+    label(right-w,cy-fontFor(13)->line_height/2,w,count,13,color);
+    if (online) icon(parent,Icon::Sync,11,right-w-4-11,cy-6,color);
+    else icon(parent,Icon::WifiOff,12,right-w-4-12,cy-6,color);
+}
 void todayView() {
     int ids[6],later[6],n=tasks(true,ids),k=tasks(false,later);
     focused=constrain(focused,0,max(0,n-(k==0)));
@@ -331,6 +405,7 @@ void todayView() {
     dateLabel=label(dateX,16-fontFor(en?13:14)->line_height/2,166-dateX,"",en?13:14,muted);
     refreshClock();
     batteryIcon(230,16);
+    syncStatus(230-batteryContentWidth()-8,16);
     auto *previousParent=panelRoot;
     taskList=box(0,32,240,132,bg);
     lv_obj_add_flag(taskList,LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_MOMENTUM);
@@ -343,10 +418,7 @@ void todayView() {
         bool focus=focused==i, done=taskState & (1<<id);
         if (focus) box(5,y,230,60,surface,9,yellow,2);
         box(15,y+20,20,20,done?muted:(focus?surface:bg),10,done?muted:dim,2);
-        if (done) {
-            auto *tick=label(14,y+20,22,LV_SYMBOL_OK,14,bg,LV_TEXT_ALIGN_CENTER);
-            lv_obj_set_style_text_font(tick,LV_FONT_DEFAULT,0);
-        }
+        if (done) icon(taskList,Icon::Tick,12,19,y+24,bg);
         const char *meta=id==1?tr("延续","Carried over"):(id==3?tr("周五截止","Due Fri"):"");
         scrollTitle(45,y+(*meta?8:19),178,title(id),focus,done);
         if (*meta) label(45,y+33,178,meta,14,id==3?due:muted);
@@ -402,6 +474,8 @@ void settingsHeader(const char *title) {
     label(25,5,126,title,17);
     batteryIcon(230,16);
 }
+// Sun and percentage are drawn twice: light on the track and dark on the fill. The fill clips its
+// copies at its right edge, so text crossing the edge stays readable on both sides.
 void paintBrightness() {
     const bool big=screen==Screen::Brightness;
     int pct=brightness*5;
@@ -413,13 +487,13 @@ void brightnessBar(bool big) {
     int w=big?212:220,h=big?72:52;
     auto *bar=box(big?14:10,big?108:116,w,h,0x2a2d33,12);
     lv_obj_set_style_clip_corner(bar,true,0);
-    // Draw labels on both backgrounds. The fill clips the dark copies at its right edge.
-    label(10,(h-24)/2,30,"☀",20,muted,LV_TEXT_ALIGN_LEFT,LV_LABEL_LONG_CLIP,bar);
-    if (!big) brightPercent=label(w-72,(h-22)/2,60,"",17,ink,LV_TEXT_ALIGN_RIGHT,LV_LABEL_LONG_CLIP,bar);
+    const int textY=(h-fontFor(16)->line_height)/2;
+    icon(bar,Icon::Sun,20,12,(h-20)/2,muted);
+    if (!big) brightPercent=label(w-72,textY,60,"",16,ink,LV_TEXT_ALIGN_RIGHT,LV_LABEL_LONG_CLIP,bar);
     brightnessFill=box(0,0,1,h,ink,0,0,0,bar);
-    label(10,(h-24)/2,30,"☀",20,bg,LV_TEXT_ALIGN_LEFT,LV_LABEL_LONG_CLIP,brightnessFill);
+    icon(brightnessFill,Icon::Sun,20,12,(h-20)/2,bg);
     if (big) brightPercent=center(47,"",40);
-    else filledPercent=label(w-72,(h-22)/2,60,"",17,bg,LV_TEXT_ALIGN_RIGHT,LV_LABEL_LONG_CLIP,brightnessFill);
+    else filledPercent=label(w-72,textY,60,"",16,bg,LV_TEXT_ALIGN_RIGHT,LV_LABEL_LONG_CLIP,brightnessFill);
     paintBrightness();
 }
 void setBrightnessLevel(int level) {
@@ -436,21 +510,12 @@ void storeBrightness() {
 void panelView() {
     auto *panel=box(0,0,240,240,0x121418);
     panelRoot=panel;
-    symbol(10,14,15,LV_SYMBOL_WIFI);
-    // Diagonal stroke distinguishes an offline radio.
-    static const lv_point_t slash[]={{0,0},{14,14}};
-    if (!campusOnline()) {
-        auto *strike=lv_line_create(panel);
-        lv_line_set_points(strike,slash,2);
-        lv_obj_set_style_line_color(strike,lv_color_hex(dim),0);
-        lv_obj_set_style_line_width(strike,2,0);
-        lv_obj_set_pos(strike,10,12);
-    }
-    label(30,12,115,campusOnline()?"HKUSTGZ":tr("未连接","Disconnected"),14);
-    label(145,13,85,campusOnline()?tr("在线","Online"):tr("离线","Offline"),13,muted,LV_TEXT_ALIGN_RIGHT);
+    icon(panel,campusOnline()?Icon::Wifi:Icon::WifiOff,15,10,15,muted);
+    label(31,22-fontFor(14)->line_height/2,110,campusOnline()?"HKUSTGZ":tr("未连接","Disconnected"),14);
+    label(145,22-fontFor(13)->line_height/2,85,campusOnline()?tr("在线","Online"):tr("离线","Offline"),13,muted,LV_TEXT_ALIGN_RIGHT);
     box(10,42,106,66,surface,12);
     box(124,42,106,66,surface,12);
-    symbol(10,52,106,LV_SYMBOL_REFRESH);
+    icon(panel,Icon::Sync,19,10+(106-19)/2,54,ink);
     label(10,78,106,tr("立即同步","Sync now"),14,ink,LV_TEXT_ALIGN_CENTER);
     label(124,48,106,tr("中","EN"),20,ink,LV_TEXT_ALIGN_CENTER);
     label(124,78,106,tr("语言","Language"),14,ink,LV_TEXT_ALIGN_CENTER);
@@ -591,10 +656,14 @@ void pagesView() {
         if (pages[i]==Screen::Today) todayView();
         else {
             bool md=pages[i]==Screen::MD;
-            label(12,5,150,md?tr("分子动力学","MD simulations"):"Claude",17);
+            const int size=en?16:17;
+            label(12,16-fontFor(size)->line_height/2,150,md?tr("分子动力学","MD simulations"):"Claude",size);
             batteryIcon(230,16);
-            center(100,md?tr("即将上线","Coming soon"):tr("暂无用量数据","No usage data yet"),18);
-            if (md) center(133,tr("模拟进度将显示在这里。","Simulation progress will show here."),14,muted);
+            if (md) {
+                icon(panelRoot,Icon::Atom,40,100,62,muted);
+                center(108,tr("即将上线","Coming soon"),18);
+                center(137,tr("模拟进度将显示在这里。","Simulation progress will show here."),14,muted);
+            } else center(107,tr("暂无用量数据","No usage data yet"),18);
         }
         panelRoot=nullptr;
     }
@@ -604,10 +673,6 @@ void render() {
     if (screen==Screen::Settings && settingsList) settingsY=lv_obj_get_scroll_y(settingsList);
     if (taskList) taskScrollY=lv_obj_get_scroll_y(taskList);
     taskList=nullptr;
-    bool moving=pageMotion!=Motion::None && pageMotion!=Motion::EdgeLeft && pageMotion!=Motion::EdgeRight;
-    auto *outgoing=moving?pageLayer:nullptr;
-    bool closingPanel=outgoing && renderedScreen==Screen::Panel && pageMotion==Motion::Up;
-    bool openingPanel=outgoing && screen==Screen::Panel && pageMotion==Motion::Down;
     pageLayer=pageTrack=nullptr;
     batteryIconCount=0;
     batterySetting=nullptr;
@@ -615,7 +680,7 @@ void render() {
     auto *root=lv_scr_act();
     for(int i=int(lv_obj_get_child_cnt(root))-1;i>=0;--i) {
         auto *child=lv_obj_get_child(root,i);
-        if(child!=outgoing) lv_obj_del(child);
+        lv_obj_del(child);
     }
     pageLayer=box(0,0,240,240,bg);
     renderedScreen=screen;
@@ -645,11 +710,13 @@ void render() {
         batteryIcon(226,19);
         refreshClock();
         timerLabel=center(confirm?82:49,"0:00",confirm?34:56);
+        lv_obj_set_style_text_letter_space(timerLabel,-1,0);
         if (confirm) {
             center(49,tr("丢弃本次录音？","Discard this recording?"),18);
             center(140,tr("NEXT 选择 · OK 确认","NEXT selects · OK confirms"),14,muted);
         } else {
-            for (int i=0;i<20;++i) bars[i]=box(31+9*i,132,6,14,line,3);
+            for (int i=0;i<20;++i) bars[i]=box(42+8*i,0,5,5,red,2);
+            paintWave();
         }
         for (int i=0;i<2;++i) {
             int x=i?124:8;
@@ -663,55 +730,44 @@ void render() {
         break;
     }
     case Screen::Saved: {
-        box(99,36,42,42,surface,21,muted,2);
-        auto *tick=center(49,LV_SYMBOL_OK,14);
-        lv_obj_set_style_text_font(tick,LV_FONT_DEFAULT,0);
-        center(91,tr("已保存","Saved"),20);
+        icon(pageLayer,Icon::Saved,56,92,50,ink);
+        center(116,tr("已保存","Saved"),20);
         char msg[56]; auto s=recordedSeconds();
         snprintf(msg,sizeof(msg),"%lu:%02lu · %s",(unsigned long)(s/60),(unsigned long)(s%60),
                  tr("已存入 microSD","on microSD"));
-        center(127,msg,14,muted); center(211,tr("保存在本机","Stored locally"),14,muted);
+        center(146,msg,14,muted);
+        center(212,campusOnline()?tr("即将同步","Syncing next"):tr("联网后同步","Will sync when online"),13,muted);
         break;
     }
-    case Screen::Error:
-        center(45,"!",20,red);
-        center(91,tr(faultZh,faultEn),20);
-        if (strcmp(faultEn,"Task save failed") && strcmp(faultEn,"Discard failed. Check SD."))
-            center(140,tr("本次录音未保存","Recording was not saved"),14,muted);
-        center(211,tr("按 OK 关闭","OK to dismiss"),14,muted);
+    case Screen::Error: {
+        icon(pageLayer,Icon::Warn,44,98,40,red);
+        center(94,tr(faultZh,faultEn),18);
+        const char *detailZh="本次录音未保存。", *detailEn="This recording wasn't saved.";
+        if (!strcmp(faultEn,"Battery too low")) { detailZh="请先充电再录音。"; detailEn="Charge the device to record."; }
+        else if (!strcmp(faultEn,"Task save failed") || !strcmp(faultEn,"Discard failed. Check SD.")) detailZh=detailEn="";
+        if (*detailEn) center(124,tr(detailZh,detailEn),14,muted);
+        center(212,tr("按 OK 关闭","OK to dismiss"),13,muted);
         break;
+    }
     case Screen::Sleep: break;
     case Screen::ReleasePower: center(100,tr("松开关机","Release to power off"),18); break;
     case Screen::UnplugPower: center(100,tr("拔下 USB 后关机","Unplug USB to power off"),18); break;
     }
     refreshBatteryWidgets();
-    if (pageMotion==Motion::EdgeLeft || pageMotion==Motion::EdgeRight) {
-        lv_anim_t a;
-        lv_anim_init(&a); lv_anim_set_var(&a,pageLayer);
-        lv_anim_set_exec_cb(&a,[](void *p,int32_t x){lv_obj_set_style_translate_x(static_cast<lv_obj_t*>(p),x,0);});
-        lv_anim_set_values(&a,0,pageMotion==Motion::EdgeLeft?-14:14);
-        lv_anim_set_time(&a,100); lv_anim_set_playback_time(&a,240); lv_anim_start(&a);
-    } else if (pageMotion!=Motion::None) {
-        bool vertical=pageMotion==Motion::Up || pageMotion==Motion::Down;
-        int ms=vertical?280:260;
-        if (closingPanel) {
-            lv_obj_move_to_index(pageLayer,0);
-            translate(outgoing,0,-240,true,ms);
-        } else {
-            int offset=pageMotion==Motion::Down || pageMotion==Motion::Right?-40:40;
-            translate(pageLayer,openingPanel?-240:offset,0,vertical,ms);
-        }
-        if (outgoing) lv_obj_del_delayed(outgoing,ms+32);
-        motionEnds=millis()+ms;
-    }
+    if (pageMotion==Motion::EdgeLeft || pageMotion==Motion::EdgeRight) bounce(pageLayer,pageMotion==Motion::EdgeLeft?-1:1);
+    else if (pageMotion!=Motion::None) enter(pageLayer,pageMotion);
     pageMotion=Motion::None; slideDirection=0;
     if (offlineToast) {
-        toast=box(53,194,134,36,surface,12,muted,1);
-        label(0,7,134,campusOnline()?tr("尚未同步","Never synced"):tr("离线","Offline"),17,ink,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,toast);
+        // Prototype toast: an ink pill 82 px above the bottom edge.
+        const char *text=campusOnline()?tr("尚未同步","Never synced"):tr("离线","Offline");
+        const int w=lv_txt_get_width(text,strlen(text),fontFor(14),0,LV_TEXT_FLAG_NONE)+24, h=fontFor(14)->line_height+10;
+        toast=box((240-w)/2,240-82-h,w,h,ink,h/2);
+        label(0,5,w,text,14,bg,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,toast);
+        fade(toast,LV_OPA_TRANSP,160);
     }
 }
 void saveChange(uint16_t value) {
-    if (prefs.putUShort("tasks",value)==sizeof(value)) taskState=value;
+    if (prefs.putUShort("tasks",value)==sizeof(value)) { taskState=value; notePendingChange(); }
     else { faultZh="任务保存失败"; faultEn="Task save failed"; go(Screen::Error); }
     dirty=true;
 }
@@ -795,11 +851,14 @@ void holdOverlay(Screen target,int percent) {
         overlay=box(0,0,240,240,0);
         lv_obj_set_style_bg_opa(overlay,185,0);
         const char *s=tr("返回","Back");
-        if (target==Screen::Sleep) s=tr("休眠","Sleep");
-        if (target==Screen::Lock) s=tr("锁屏","Lock");
-        label(0,94,240,s,20,ink,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,overlay);
-        box(70,135,100,5,dim,3,0,0,overlay);
-        progressFill=box(70,135,1,5,ink,3,0,0,overlay);
+        Icon glyph=Icon::Back;
+        if (target==Screen::Sleep) { s=tr("休眠","Sleep"); glyph=Icon::Moon; }
+        if (target==Screen::Lock) { s=tr("锁屏","Lock"); glyph=Icon::Lock; }
+        // Prototype .hob: icon, label and bar stacked with 6 px gaps, centred.
+        icon(overlay,glyph,32,104,83,ink);
+        label(0,121,240,s,20,ink,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,overlay);
+        box(70,152,100,5,0x3a3e45,3,0,0,overlay);
+        progressFill=box(70,152,1,5,ink,3,0,0,overlay);
     }
     lv_obj_set_width(progressFill,max(1,percent));
 }
@@ -1007,10 +1066,11 @@ void updateView(uint32_t now) {
             showDuration(timerLabel,s); lastSeconds=s;
             lv_obj_set_style_opa(recordDot,s%2?LV_OPA_40:LV_OPA_COVER,0);
         }
-        uint8_t level=audioLevel();
-        if (screen==Screen::Recording && lastLevel!=level) {
-            for (int i=0;i<20;++i) lv_obj_set_style_bg_color(bars[i],lv_color_hex(i<level?red:line),0);
-            lastLevel=level;
+        if (screen==Screen::Recording && now-waveSampled>=70) {
+            waveSampled=now;
+            memmove(wave,wave+1,sizeof(wave)-1);
+            wave[19]=audioLevel();
+            paintWave();
         }
     }
     if (countdown) {
@@ -1097,6 +1157,7 @@ void setup() {
     savedBrightness=brightness=constrain(int(prefs.getUChar("brightness",16)),1,20);
     sleepOption=constrain(int(prefs.getUChar("sleep",1)),0,3);
     taskState=prefs.getUShort("tasks",0);
+    pendingChanges=prefs.getUShort("pending",0);
     battery=batteryPercent();
     isCharging=chargeSample=charging();
     chargeChangedAt=millis();
