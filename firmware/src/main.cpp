@@ -58,6 +58,11 @@ lv_obj_t *settingsList, *settingRows[SettingCount], *brightnessFill, *brightPerc
 constexpr int pageWidth=240;
 constexpr Screen pages[]={Screen::Today,Screen::Claude,Screen::MD};
 lv_obj_t *pageTrack;
+// The quick panel behaves as a pull-down shade (§4.11). While it is pulled over a page it lives in
+// its own layer (`shade`) above that page. `panelLift` is how far the open panel has been dragged up.
+lv_obj_t *shade;
+bool shadeDragging, panelDragging;
+int panelLift;
 bool draggingPages=false;
 int pageIndex(Screen value) {
     for (int i=0;i<3;++i) if (pages[i]==value) return i;
@@ -65,6 +70,18 @@ int pageIndex(Screen value) {
 }
 void positionTrack(void *track,int32_t x) {
     lv_obj_set_x(static_cast<lv_obj_t*>(track),x);
+}
+// Moves a layer vertically with ease-out, up to 0.28 s for a full screen. Optionally deletes it after.
+int slideY(lv_obj_t *obj,int from,int to,bool deleteAfter) {
+    const int ms=constrain(abs(to-from)*280/240,120,280);
+    lv_anim_t a; lv_anim_init(&a);
+    lv_anim_set_var(&a,obj);
+    lv_anim_set_exec_cb(&a,[](void *o,int32_t v){lv_obj_set_style_translate_y(static_cast<lv_obj_t*>(o),v,0);});
+    lv_anim_set_values(&a,from,to); lv_anim_set_time(&a,ms);
+    lv_anim_set_path_cb(&a,lv_anim_path_ease_out);
+    if (deleteAfter) lv_anim_set_ready_cb(&a,[](lv_anim_t *done){lv_obj_del(static_cast<lv_obj_t*>(done->var));});
+    lv_anim_start(&a);
+    return ms;
 }
 Preferences prefs;
 bool sleepAfter, dirty=true;
@@ -118,6 +135,7 @@ void settlePage(int index) {
     motionEnds+=duration;
 }
 void go(Screen target) {
+    if (shade) { lv_obj_del(shade); shade=nullptr; shadeDragging=false; }
     if (screen==Screen::Settings && settingsList) settingsY=lv_obj_get_scroll_y(settingsList);
     storeBrightness();
     settingsTouch=false;
@@ -602,14 +620,20 @@ void render() {
     if (screen==Screen::Settings && settingsList) settingsY=lv_obj_get_scroll_y(settingsList);
     if (taskList) taskScrollY=lv_obj_get_scroll_y(taskList);
     taskList=nullptr;
+    lv_obj_t *previousLayer=pageLayer;
     pageLayer=pageTrack=nullptr;
     batteryIconCount=0;
     batterySetting=nullptr;
     draggingPages=false;
+    // The panel opens by sliding down over the previous screen and closes by sliding up off the next.
+    const bool openingPanel=screen==Screen::Panel && pageMotion==Motion::Down;
+    const bool closingPanel=renderedScreen==Screen::Panel && pageMotion==Motion::Up && pageIndex(screen)>=0;
+    lv_obj_t *outgoing=openingPanel || closingPanel?previousLayer:nullptr;
+    shade=nullptr; shadeDragging=panelDragging=false;
     auto *root=lv_scr_act();
     for(int i=int(lv_obj_get_child_cnt(root))-1;i>=0;--i) {
         auto *child=lv_obj_get_child(root,i);
-        lv_obj_del(child);
+        if (child!=outgoing) lv_obj_del(child);
     }
     pageLayer=box(0,0,240,240,bg);
     renderedScreen=screen;
@@ -689,8 +713,16 @@ void render() {
     case Screen::UnplugPower: center(100,tr("拔下 USB 后关机","Unplug USB to power off"),18); break;
     }
     refreshBatteryWidgets();
-    if (pageMotion==Motion::EdgeLeft || pageMotion==Motion::EdgeRight) bounce(pageLayer,pageMotion==Motion::EdgeLeft?-1:1);
+    if (closingPanel && outgoing) {
+        lv_obj_move_foreground(outgoing);
+        motionEnds=millis()+slideY(outgoing,panelLift,-240,true);
+    } else if (openingPanel && outgoing) {
+        const int ms=slideY(pageLayer,-240,0,false);
+        lv_obj_del_delayed(outgoing,ms);
+        motionEnds=millis()+ms;
+    } else if (pageMotion==Motion::EdgeLeft || pageMotion==Motion::EdgeRight) bounce(pageLayer,pageMotion==Motion::EdgeLeft?-1:1);
     else if (pageMotion!=Motion::None) motionEnds=millis()+enter(pageLayer,pageMotion);
+    panelLift=0;
     pageMotion=Motion::None; slideDirection=0;
     if (offlineToast) {
         // Prototype toast: an ink pill 82 px above the bottom edge.
@@ -900,6 +932,33 @@ void gesture(int x,int y,int dx,int dy) {
         if (pos>=0 && pos%layout::rowPitch<layout::rowHeight && pos/layout::rowPitch<n) { focused=pos/layout::rowPitch; shortKey(okPin); }
     }
 }
+// Builds the quick panel in its own layer above the current screen, for pulling it down.
+lv_obj_t *buildShade() {
+    lv_obj_t *page=pageLayer;
+    pageLayer=box(0,0,240,240,0x121418,0,0,0,lv_scr_act());
+    lv_obj_t *layer=pageLayer;
+    panelRoot=nullptr;
+    panelView();
+    pageLayer=page;
+    return layer;
+}
+// The shade's bottom edge follows the finger.
+void pullShade(int fingerY) { lv_obj_set_style_translate_y(shade,min(0,fingerY-240),0); }
+void releaseShade(bool open,Screen from) {
+    shadeDragging=false;
+    const int at=lv_obj_get_style_translate_y(shade,0);
+    if (!open) {
+        motionEnds=millis()+slideY(shade,at,-240,true);
+        shade=nullptr;
+        return;
+    }
+    motionEnds=millis()+slideY(shade,at,0,false);
+    panelFrom=from;
+    screen=Screen::Panel; // Rendered in place once the shade has settled.
+    lastInput=entered=interacted=rotated=millis();
+    offlineToast=false;
+    dirty=true;
+}
 void setBrightnessFromTouch(int x) {
     const Rect &bar=screen==Screen::Panel?layout::panelBrightness:layout::screenBrightness;
     setBrightnessLevel(((x-bar.x)*20+bar.w-1)/bar.w);
@@ -907,12 +966,12 @@ void setBrightnessFromTouch(int x) {
 void pollTouch(uint32_t now) {
     static uint32_t polled,lastSeen;
     static int startX,startY,x,y;
-    static bool tracking,listTouch,slider,moved;
+    static bool tracking,listTouch,slider,sliderMoved,moved;
     static int sliderStart; // Brightness when the touch began, restored if it turns into a swipe up.
     static bool pageTouch,verticalDrag;
     static int trackStart;
     static Screen from;
-    if (screen==Screen::Sleep || overlay) {
+    if (screen==Screen::Sleep || overlay || (shade && !shadeDragging)) {
         if (draggingPages && pageTrack) settlePage(pageIndex(screen));
         tracking=settingsTouch=false; return;
     }
@@ -931,6 +990,7 @@ void pollTouch(uint32_t now) {
                 draggingPages=lv_anim_del(pageTrack,positionTrack);
             }
             sliderStart=brightness;
+            sliderMoved=false;
             slider=(screen==Screen::Panel && layout::panelBrightness.contains(tx,ty)) ||
                    (screen==Screen::Brightness && layout::screenBrightness.contains(tx,ty));
             moved=screen==Screen::Settings && settingsList && lv_obj_is_scrolling(settingsList);
@@ -940,8 +1000,24 @@ void pollTouch(uint32_t now) {
         settingsTouch=screen==from && ((from==Screen::Settings && startY>=layout::header) || listTouch);
         settingsPoint={lv_coord_t(x),lv_coord_t(y)};
         int dx=x-startX, dy=y-startY;
+        if (shadeDragging) { pullShade(y); return; }
+        if (panelDragging) { lv_obj_set_style_translate_y(pageLayer,min(0,dy),0); return; }
+        if (screen==Screen::Panel && from==screen && !sliderMoved && dy<=-8 && -dy>abs(dx)) {
+            panelDragging=true;
+            settingsTouch=false;
+            return;
+        }
         if (pageTouch && pageTrack && from==screen && !verticalDrag) {
-            if (!draggingPages && abs(dy)>=8 && abs(dy)>=abs(dx)) verticalDrag=true;
+            if (!draggingPages && abs(dy)>=8 && abs(dy)>=abs(dx)) {
+                verticalDrag=true;
+                if (startY<layout::header && dy>0) {
+                    shade=buildShade();
+                    shadeDragging=true;
+                    settingsTouch=false;
+                    pullShade(y);
+                    return;
+                }
+            }
             else if (draggingPages || (abs(dx)>=8 && abs(dx)>abs(dy))) {
                 draggingPages=true;
                 settingsTouch=false;
@@ -956,9 +1032,23 @@ void pollTouch(uint32_t now) {
         if (abs(x-startX)>=6 || abs(y-startY)>=6) moved=true;
         // The bar follows a sideways drag. A touch that is still at rest, or moving mostly
         // vertically, may become a tap or a swipe up, so it waits (no backlight flash).
-        if (slider && screen==from && abs(x-startX)>=6 && abs(x-startX)>=abs(y-startY)) setBrightnessFromTouch(x);
+        if (slider && screen==from && abs(x-startX)>=6 && abs(x-startX)>=abs(y-startY)) {
+            sliderMoved=true;
+            setBrightnessFromTouch(x);
+        }
     } else if (tracking && (state==Contact::Released || now-lastSeen>100)) {
         tracking=settingsTouch=false;
+        const bool released=state==Contact::Released;
+        if (shadeDragging) { releaseShade(released && y-startY>=30 && y-startY>abs(x-startX),from); return; }
+        if (panelDragging) {
+            panelDragging=false;
+            if (released && startY-y>=30) {
+                setBrightnessLevel(sliderStart);
+                panelLift=lv_obj_get_style_translate_y(pageLayer,0);
+                go(panelFrom);
+            } else motionEnds=millis()+slideY(pageLayer,lv_obj_get_style_translate_y(pageLayer,0),0,false);
+            return;
+        }
         if (from!=screen) return;
         if (draggingPages && pageTrack) {
             int dx=x-startX, index=pageIndex(from);
@@ -1010,7 +1100,9 @@ void updateView(uint32_t now) {
             rotated=now;
         }
     }
-    if (dirty && (renderedScreen!=screen || (!draggingPages && int32_t(now-motionEnds)>=0))) render();
+    const bool settling=int32_t(now-motionEnds)<0;
+    // A shade that has been released open finishes sliding before the panel is rebuilt in place.
+    if (dirty && !(shade && settling) && (renderedScreen!=screen || (!draggingPages && !settling))) render();
     if (recordingActive()) {
         unsigned s=recordedSeconds();
         if (lastSeconds!=s) {

@@ -1,0 +1,27 @@
+# Quick panel as a pull-down shade: follow the finger, settle, spring back, close.
+serial en
+wait 600
+press ok
+wait 600
+film pull-open 600 40
+touch 120 8
+move 120 60 160
+move 120 130 160
+lift
+wait 600
+film drag-close 560 40
+touch 120 200
+move 120 120 160
+move 120 70 120
+lift
+wait 600
+film short-pull 400 40
+touch 120 8
+move 120 30 120
+lift
+wait 500
+swipe 120 8 120 120 120
+wait 500
+film next-close 360 40
+press next
+wait 500

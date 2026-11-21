@@ -157,8 +157,8 @@ Not every feature needs a button. Only frequent actions are on keys. Pages are r
 - **Freshness:** page data refreshes only when the device syncs. That's why every data page shows when it was last updated.
 
 ### 4.11 Quick panel (swipe down)
-- **Open:** swipe down (≥ 30 px) starting in the top 32 px (header band) of Today or a page. It slides down (0.28 s).
-- **Close:** swipe up (≥ 30 px), press OK or NEXT, or hold OK. Closing returns to the screen it was opened from. A swipe up that starts on the brightness bar also closes the panel and leaves the brightness unchanged; the bar only follows sideways drags and taps.
+- **Open:** swipe down (≥ 30 px) starting in the top 32 px (header band) of Today or a page. The panel is a pull-down shade: it slides down over the page with its bottom edge under the finger. Releasing after at least 30 px finishes the slide; a shorter pull springs back. The remaining movement eases out in at most 0.28 s.
+- **Close:** swipe up (≥ 30 px), press OK or NEXT, or hold OK. Closing returns to the screen it was opened from. The panel slides up off that screen, which stays still underneath; while swiping, the panel follows the finger, and a swipe shorter than 30 px settles it back. A swipe up that starts on the brightness bar also closes the panel and leaves the brightness unchanged; the bar only follows sideways drags and taps.
 - **Layout** (10px padding, 8px gaps, background `#121418`):
   1. **Status row (24px):** Wi-Fi icon (or Wi-Fi-off), network name (SSID), and `Synced 10:40` / `已同步 10:40` or `Offline` / `离线`. A manual Wi-Fi session with no sync result shows the SSID and `Online` / `在线` after DHCP.
   2. **Two tiles (66px each, 12px radius):**
@@ -204,9 +204,10 @@ Not every feature needs a button. Only frequent actions are on keys. Pages are r
 ### 4.13 Motion
 All motion eases out, matching the prototype's CSS.
 - **Screen changes:** the new screen enters 40px from its direction of travel while fading in from 20% opacity. The previous screen disappears at once. Upward 0.3 s, downward 0.28 s, sideways 0.26 s.
-  - Up: unlock, closing the quick panel. Down: opening the quick panel.
+  - Up: unlock.
   - Left: All settings, and Brightness or Clock from Settings. Right: back from those screens.
   - Other screen changes (picker, recording, Saved, errors, sleep and wake) switch without motion.
+- **Quick panel:** a shade that covers and uncovers the page without fading (§4.11). A full-screen fade with the bright brightness bar showed tearing on the panel, which has no tear-effect line.
 - **Pages:** follow the finger (§4.10).
 - **Edge bounce:** a swipe past the first or last page without dragging nudges the screen 14px toward the swipe at 30% of 0.34 s, 4px back at 65%, then rests.
 - **Content within a screen** (lock-screen notes, the When I Have Time line, picker titles): enters 28px from the side it comes from while fading in from transparent, 0.28 s.

@@ -39,6 +39,7 @@ wait 300
 snap
 touch 40 140
 move 120 140 120
+wait 30
 lift
 wait 300
 snap
