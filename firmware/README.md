@@ -101,6 +101,20 @@ Icons are the prototype's SVG strokes, rasterized into `src/icons_data.cpp` by `
 - **Sleep is shallow.** It turns off the backlight and runs the CPU at 80 MHz instead of 240 MHz, and Wi-Fi sessions end by themselves. True light sleep would disconnect USB on every sleep and needs testing on hardware first.
 - **Arduino-ESP32 2.0.17 (ESP-IDF 4.4).** Its SDK has no public setter for the RADIUS server name, so `tools/campus_tls.py` renames a symbol in the prebuilt supplicant and `-Wl,--wrap=eap_sm_allowMethod` restricts the outer method to PEAP. Moving to Arduino-ESP32 3.x (ESP-IDF 5) would replace both with `esp_eap_client_set_domain_name()`. It also changes the I2S, TinyUSB and Wi-Fi APIs this firmware uses. That move needs a hardware session to verify USB mounting and campus login, so it has not been made blind. The build fails loudly (`Supplicant TLS setup hook missing`) if the patch stops applying.
 
+## Collect diagnostics
+
+From the repository root on Windows, run this to save the current diagnostic history and collect again after a reconnect or reboot.
+
+```powershell
+.\work\venv\Scripts\python.exe firmware/tools/collect_logs.py --watch
+```
+
+The helper saves a timestamped file under `work/diagnostics/` and prints its location. Omit `--watch` for a single capture. Close other serial tools when capturing. The USB console also accepts `log status` and `log dump`.
+
+The device keeps its last 128 events in RTC memory. The *previous* section is recovered after a reset that preserves RTC memory. The *checkpoint* section is the last flash snapshot from before this boot, and *incident* holds up to 32 events leading to the latest retained watchdog or panic reset. A complete loss of power leaves the last committed flash snapshots. Each section identifies the boot and build, and event times are milliseconds since boot. `sntp.synced` and `clock.set` record the corresponding Unix timestamp in `a`.
+
+Diagnostics include stages and result codes for Wi-Fi, USB and card readiness, sleep and wake, and slow main loops. The log leaves out campus credentials, IP addresses, and recording or note content. Windows Code 43 counts describe what the host saw during an outage. Match the time and USB port when attributing an error to the handheld.
+
 ## Fonts
 
 The firmware reads the 4-bit antialiased glyphs directly from flash. The Chinese faces at 13, 14, 17, 18 and 20 px include all 3,500 level-one characters from the 2013 Table of General Standard Chinese Characters. The pack also includes punctuation, prototype text, Inter for Latin and JetBrains Mono for the recording timer. It occupies 2,714,917 bytes including metrics and indexes. Each application slot is 7 MiB. The UI and its card errors work without a font file on the card.

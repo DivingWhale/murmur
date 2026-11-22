@@ -8,6 +8,7 @@
 #include "../src/campus_profile.h"
 #include "../src/campus_wifi.h"
 #include "../src/card_usb.h"
+#include "../src/diagnostics.h"
 #include <USB.h>
 #include <Preferences.h>
 #include <lvgl.h>
@@ -128,9 +129,18 @@ void startCampusWifiAfterRecording() {}
 void stopCampusWifi() {}
 bool serviceCampusWifi() { return false; }
 void campusCommand(char *cmd, Print &out) { out.printf("wifi sim %s\n", cmd); }
-void beginCampusDiagnostics() {}
+uint32_t beginCampusDiagnostics() { return 0; }
 void diagLoopPhase(uint8_t) {}
 uint32_t campusClockHint() { return 0; }
+
+namespace diagnostics {
+void begin(uint32_t) {}
+void startWorker() {}
+void record(Event, int32_t, int32_t) {}
+void requestCheckpoint() {}
+void command(const char *) {}
+bool exporting() { return false; }
+}
 bool hasCampusProfile() { return true; }
 
 // ---------------------------------------------------------------- PNG output

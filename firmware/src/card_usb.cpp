@@ -1,4 +1,5 @@
 #include "card_usb.h"
+#include "diagnostics.h"
 #include <Arduino.h>
 #include <USB.h>
 #include <driver/sdmmc_host.h>
@@ -75,9 +76,11 @@ uint16_t descriptor(uint8_t *dst,uint8_t *interfaceNumber) {
     return sizeof(bytes);
 }
 void connectionEvent(void *,esp_event_base_t,int32_t id,void *) {
+    const bool attached=id==ARDUINO_USB_STARTED_EVENT;
+    diagnostics::record(attached?diagnostics::Event::UsbAttached:diagnostics::Event::UsbDetached);
     CardLock lock;
     ejected=false;
-    usbConnected=id==ARDUINO_USB_STARTED_EVENT;
+    usbConnected=attached;
     visibleBlocks.store(0);
     if (usbConnected) usbAttachedAt=millis();
     else closeRaw();
@@ -90,6 +93,7 @@ void probeMedia(void *) {
         if (ready() && !visibleBlocks.load()) {
             mediumChanged.store(1);
             visibleBlocks.store(card.csd.capacity);
+            diagnostics::record(diagnostics::Event::CardReady);
         }
     }
 }
@@ -203,7 +207,9 @@ int32_t tud_msc_read10_cb(uint8_t lun,uint32_t lba,uint32_t offset,void *buffer,
         uint32_t count=left/sizeof(sector);
         bool whole=skip==0 && count>0;
         size_t n=whole?count*sizeof(sector):std::min<size_t>(left,sizeof(sector)-skip);
-        if (sdmmc_read_sectors(&card,whole?out:sector,pos/sizeof(sector),whole?count:1)!=ESP_OK) {
+        const esp_err_t err=sdmmc_read_sectors(&card,whole?out:sector,pos/sizeof(sector),whole?count:1);
+        if (err!=ESP_OK) {
+            diagnostics::record(diagnostics::Event::CardReadError,err);
             closeRaw();
             mediumChanged=true;
             retryAt=millis()+1200;

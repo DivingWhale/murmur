@@ -3,6 +3,7 @@
 #include "card_usb.h"
 #include "campus_wifi.h"
 #include "campus_profile.h"
+#include "diagnostics.h"
 #include <cstring>
 #include <USB.h>
 #include "fonts.h"
@@ -180,7 +181,8 @@ void go(Screen target) {
         settlePage(pageIndex(target));
         return;
     }
-    const bool waking=screen==Screen::Sleep && target!=Screen::Sleep && target!=Screen::Recording;
+    const bool wasSleeping=screen==Screen::Sleep;
+    const bool waking=wasSleeping && target!=Screen::Sleep;
     if (target==Screen::Panel && screen==Screen::Settings) pageMotion=Motion::Right;
     else if (screen==Screen::Panel && target==Screen::Settings) pageMotion=Motion::Left;
     else if (screen==Screen::Lock && target==Screen::Today) pageMotion=Motion::Up;
@@ -189,9 +191,11 @@ void go(Screen target) {
     screen=target;
     lastInput=entered=interacted=rotated=millis();
     dirty=true;
+    if (target==Screen::Sleep && !wasSleeping) diagnostics::record(diagnostics::Event::Sleep);
+    if (waking) diagnostics::record(diagnostics::Event::Wake);
     setLowPower(target==Screen::Sleep);
     setBacklight(target==Screen::Sleep?0:brightness*5);
-    if (waking) startCampusWifiOnWake();
+    if (waking && target!=Screen::Recording) startCampusWifiOnWake();
 }
 void showError(const char *zh,const char *english) {
     faultZh=zh; faultEn=english; go(Screen::Error);
@@ -594,7 +598,10 @@ void nextClockField() {
     t.tm_year=clockParts[0]-1900; t.tm_mon=clockParts[1]-1; t.tm_mday=clockParts[2];
     t.tm_hour=clockParts[3]; t.tm_min=clockParts[4];
     timeval tv{mktime(&t),0};
-    if (tv.tv_sec>=1704067200 && settimeofday(&tv,nullptr)==0) go(Screen::Settings);
+    if (tv.tv_sec>=1704067200 && settimeofday(&tv,nullptr)==0) {
+        diagnostics::record(diagnostics::Event::ClockSet,tv.tv_sec);
+        go(Screen::Settings);
+    }
 }
 void editClock() {
     time_t now=time(nullptr);
@@ -1161,8 +1168,13 @@ void updateView(uint32_t now) {
 // Display refresh rate over the last second and the slowest loop since the last `perf`.
 uint32_t measuredFps, slowestLoop;
 void measurePerformance(uint32_t now,uint32_t loopStart) {
-    static uint32_t windowStart, framesAtStart;
-    slowestLoop=max(slowestLoop,now-loopStart);
+    static uint32_t windowStart, framesAtStart, lastSlowLoop;
+    const uint32_t elapsed=now-loopStart;
+    slowestLoop=max(slowestLoop,elapsed);
+    if (elapsed>=50 && now-lastSlowLoop>=1000) {
+        diagnostics::record(diagnostics::Event::LoopSlow,elapsed);
+        lastSlowLoop=now;
+    }
     if (now-windowStart<1000) return;
     const uint32_t frames=displayFrames();
     measuredFps=(frames-framesAtStart)*1000/(now-windowStart);
@@ -1172,12 +1184,13 @@ void serialSettings() {
     static char buf[288];
     static bool overflow=false;
     static unsigned len=0;
-    while (usbSerial.available()) {
+    while (!diagnostics::exporting() && usbSerial.available()) {
         char ch=usbSerial.read();
         if (ch=='\r') continue;
         if (ch!='\n') { if (len<sizeof(buf)-1) buf[len++]=ch; else overflow=true; continue; }
         buf[len]=0; len=0;
         if (overflow) { usbSerial.println("error input too long"); overflow=false; }
+        else if (!strncmp(buf,"log ",4)) diagnostics::command(buf+4);
         else if (!strncmp(buf,"wifi ",5)) {
             campusCommand(buf+5,usbSerial);
             if (screen==Screen::Settings || screen==Screen::Panel) dirty=true;
@@ -1190,7 +1203,11 @@ void serialSettings() {
             printMicLevels(usbSerial);
         } else if (!strncmp(buf,"time ",5)) {
             long seconds=atol(buf+5);
-            if (seconds>=1704067200) { timeval t{seconds,0}; settimeofday(&t,nullptr); dirty=true; }
+            if (seconds>=1704067200) {
+                timeval t{seconds,0};
+                if (settimeofday(&t,nullptr)==0) diagnostics::record(diagnostics::Event::ClockSet,seconds);
+                dirty=true;
+            }
         }
         memset(buf,0,sizeof(buf));
     }
@@ -1198,7 +1215,7 @@ void serialSettings() {
 }
 
 void setup() {
-    beginCampusDiagnostics();
+    diagnostics::begin(beginCampusDiagnostics());
     boardBegin();
     static lv_indev_drv_t touchDriver;
     lv_indev_drv_init(&touchDriver);
@@ -1230,6 +1247,7 @@ void setup() {
     // Reboot instead. `wifi diag` then reports where Wi-Fi code was.
     esp_task_wdt_init(15,true);
     enableLoopWDT();
+    diagnostics::startWorker();
 }
 void loop() {
     uint32_t now=millis();

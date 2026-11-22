@@ -1,5 +1,6 @@
 #include "campus_wifi.h"
 #include "campus_profile.h"
+#include "diagnostics.h"
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <esp_sntp.h>
@@ -16,6 +17,7 @@
 
 extern "C" const uint8_t murmur_campus_ca[], murmur_campus_ca_end[];
 namespace {
+using diagnostics::Event;
 constexpr char ssid[]="HKUSTGZ", radius[]="nce.hkust-gz.edu.cn";
 enum class State { Off, Deferred, WaitingClock, Joining, ClockOnly, Online, Failed, MissingCard };
 State state=State::Off;
@@ -52,8 +54,13 @@ void sntpStart(void *) {
     sntp_setservername(1,(char*)"time.cloudflare.com");
     sntp_setservername(2,(char*)"cn.pool.ntp.org");
     sntp_init();
+    diagnostics::record(Event::SntpStarted,sntp_enabled());
 }
-void sntpStop(void *) { if (sntp_enabled()) sntp_stop(); }
+void sntpStop(void *) {
+    const bool enabled=sntp_enabled();
+    if (enabled) sntp_stop();
+    diagnostics::record(Event::SntpStopped,enabled);
+}
 // Session lifetime. Automatic sessions (boot, wake, after a recording, Settings)
 // switch the radio off once network time arrives or after a short cap. Manual
 // sessions from the USB helper stay up until `wifi off`, with a longer cap.
@@ -122,18 +129,25 @@ void stopRadio(State next) {
     if (next==State::Failed && (state==State::Joining || state==State::ClockOnly)) { ++failStreak; failedAt=millis(); }
     if (WiFi.getMode()!=WIFI_OFF) {
         stage(1);
-        tcpip_callback(sntpStop,nullptr);
+        diagnostics::record(Event::WifiStopBegin);
+        const auto sntpResult=tcpip_callback(sntpStop,nullptr);
+        diagnostics::record(Event::SntpQueued,sntpResult,1);
         // Let the supplicant finish with the link before removing its EAP setup.
-        if (esp_wifi_disconnect()==ESP_OK)
+        const esp_err_t disconnected=esp_wifi_disconnect();
+        if (disconnected==ESP_OK)
             for (uint32_t t=millis(); !linkDown.load() && millis()-t<1000;) delay(10);
+        diagnostics::record(Event::WifiDisconnect,disconnected,linkDown.load());
         stage(2);
-        esp_wifi_sta_wpa2_ent_disable();
+        const esp_err_t eapDisabled=esp_wifi_sta_wpa2_ent_disable();
+        diagnostics::record(Event::WifiEapDisabled,eapDisabled);
         esp_wifi_sta_wpa2_ent_clear_password();
         esp_wifi_sta_wpa2_ent_clear_username();
         esp_wifi_sta_wpa2_ent_clear_identity();
         esp_wifi_sta_wpa2_ent_clear_ca_cert();
         stage(4);
-        WiFi.mode(WIFI_OFF);
+        const bool radioOff=WiFi.mode(WIFI_OFF);
+        diagnostics::record(Event::WifiRadioOff,radioOff);
+        diagnostics::requestCheckpoint();
         stage(0);
     }
     state=next;
@@ -150,12 +164,15 @@ bool join(const char *user,const char *pass,const CampusPeer *pinned=nullptr) {
     static const auto listener=WiFi.onEvent([](WiFiEvent_t,WiFiEventInfo_t info){
         reason.store(info.wifi_sta_disconnected.reason);
         linkDown.store(true);
+        diagnostics::record(Event::WifiLinkDown,info.wifi_sta_disconnected.reason);
     },ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
     static const auto connected=WiFi.onEvent([](WiFiEvent_t,WiFiEventInfo_t){
         linkDown.store(false);
+        diagnostics::record(Event::WifiLinkUp);
     },ARDUINO_EVENT_WIFI_STA_CONNECTED);
     (void)listener; (void)connected;
     stage(10);
+    diagnostics::record(Event::WifiJoin,manualSession,bootstrap);
     WiFi.persistent(false);
     WiFi.setAutoReconnect(false);
     wifi_config_t config{};
@@ -171,6 +188,7 @@ bool join(const char *user,const char *pass,const CampusPeer *pinned=nullptr) {
         esp_wifi_sta_wpa2_ent_set_ca_cert(murmur_campus_ca,murmur_campus_ca_end-murmur_campus_ca)!=ESP_OK ||
         esp_wifi_sta_wpa2_ent_set_disable_time_check(false)!=ESP_OK ||
         esp_wifi_sta_wpa2_ent_enable()!=ESP_OK || esp_wifi_connect()!=ESP_OK) {
+        diagnostics::record(Event::WifiJoinError);
         stopRadio(State::Failed); return false;
     }
     stage(0);
@@ -203,6 +221,7 @@ void resumeSavedCampusWifi() {
     CampusLogin login;
     stage(20);
     const bool loaded=loadCampusProfile(login);
+    diagnostics::record(Event::WifiProfile,loaded);
     stage(0);
     if (!loaded) {state=State::MissingCard; ++cardAttempts; retryAt=millis()+4000; return;}
     cardAttempts=0;
@@ -221,23 +240,28 @@ bool serviceCampusWifi() {
             bool verifiedLeaf=observedPeer.checkedAt!=0;
             portEXIT_CRITICAL(&peerLock);
             if (!verifiedLeaf) {
+                diagnostics::record(Event::WifiFailed,reason.load(),certFlags.load());
                 pending.clear(); savePending=false; stopRadio(State::Failed); return true;
             }
             state=bootstrap?State::ClockOnly:State::Online;
+            diagnostics::record(Event::WifiGotIp,bootstrap,manualSession);
             networkRetries=0;
             if (!bootstrap) { rememberVerifiedPeer(); everOnline=true; failStreak=0; }
             started=onlineAt=millis(); clockUpdated.store(false); sessionTimeAt.store(0);
             sntp_set_time_sync_notification_cb([](timeval *t){
                 lastNetworkTime.store(t->tv_sec);
                 sessionTimeAt.store(millis()|1);
+                diagnostics::record(Event::SntpSynced,t->tv_sec);
                 clockUpdated.store(true);
             });
-            tcpip_callback(sntpStart,nullptr); // TZ is set in setup().
+            const auto sntpResult=tcpip_callback(sntpStart,nullptr); // TZ is set in setup().
+            diagnostics::record(Event::SntpQueued,sntpResult,0);
             if (savePending) saveFailed=!saveCampusProfile(pending);
             pending.clear(); savePending=false; return true;
         }
         if (millis()-started>30000) {
             const unsigned why=reason.load();
+            diagnostics::record(Event::WifiFailed,why,certFlags.load());
             bool retry=usingSavedLogin && networkRetries<2 && !certFlags.load() &&
                 (why==0 || why==WIFI_REASON_ASSOC_LEAVE || why==WIFI_REASON_NO_AP_FOUND ||
                  why==WIFI_REASON_BEACON_TIMEOUT || why==WIFI_REASON_ASSOC_EXPIRE);
@@ -323,10 +347,11 @@ void campusCommand(char *cmd,Print &out) {
     }
     out.println("wifi error command");
 }
-void beginCampusDiagnostics() {
+uint32_t beginCampusDiagnostics() {
     const bool valid=(rtcStage&0xffff0000u)==stageMagic && esp_reset_reason()!=ESP_RST_POWERON;
     stageBeforeReset=valid?(rtcStage&0xffffu):0;
     rtcStage=stageMagic;
+    return stageBeforeReset;
 }
 void diagLoopPhase(uint8_t phase) {
     rtcStage=stageMagic|(uint32_t(phase)<<8)|(rtcStage&0xffu);
