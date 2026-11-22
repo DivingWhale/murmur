@@ -22,7 +22,7 @@ lv_obj_t *center(int y,const char *s,int size,uint32_t color=ink); // Wrapped, c
 void dots(int x,int y,int count,int selected);
 void symbol(int x,int y,int w,const char *glyph,lv_obj_t *parent=nullptr); // LVGL built-in symbol glyph.
 
-enum class Motion { None, Left, Right, Up, Down, EdgeLeft, EdgeRight };
+enum class Motion { None, Left, Right, Up, EdgeLeft, EdgeRight };
 void translate(lv_obj_t *obj,int start,int end,bool vertical,int ms);
 void fade(lv_obj_t *obj,lv_opa_t from,int ms);
 int enter(lv_obj_t *obj,Motion motion);  // Screen entrance; returns its duration in ms.

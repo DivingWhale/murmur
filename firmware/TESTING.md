@@ -9,7 +9,7 @@ Flash the finished application once. Verify the changed features, the serial res
 ## After a UI change
 
 1. Run the simulator scenes (`sim/README.md`) and compare the contact sheets with the prototype's *Screen states*. `scenes/interact.txt` should produce identical images after a change that is not meant to alter the UI.
-2. On the device, swipe between Today, Claude and MD, open and close the quick panel, and unlock from the lock screen. Send `perf` right after: the frame rate during those animations should stay above 30 fps, and `loop_max_ms` should stay under about 50 ms.
+2. On the device, swipe between Today, Claude and MD, open and close the quick panel, and unlock from the lock screen. Send `perf` right after: the frame rate during those animations should stay above 30 fps, and `loop_max_ms` should stay under about 50 ms. Then leave Today, Claude or the open quick panel untouched for 2 s and send `perf` again: it should report `mhz=80`, and Today's scrolling titles should still move smoothly.
 
 ## Targeted USB regression
 
@@ -28,6 +28,7 @@ A flash reset and a complete loss of board power are different test conditions. 
 ## Open items
 
 - Measure `perf` on hardware with the DMA display driver (not yet flashed).
+- Check that a campus login and a USB file copy both still work while the awake screen is still and the CPU is at 80 MHz.
 
 - Repeat the targeted USB regression with the battery connected.
 - The cause of the Windows Code 43 seen on 2026-11-21 is not established.

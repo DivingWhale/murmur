@@ -1,12 +1,14 @@
 #pragma once
-#include <Arduino.h>
+#include <cstdint>
 
 constexpr int plusPin = 4, nextPin = 0, okPin = 5;
 void boardBegin();
 void releaseBatteryPower();
 void setBacklight(uint8_t percent);
-// Sleep runs the CPU at 80 MHz. USB, Wi-Fi, I2S and the display use their own clocks.
+// 80 MHz instead of 240 MHz, for Sleep and for still screens. USB, Wi-Fi, I2S and the display
+// use their own clocks.
 void setLowPower(bool low);
+uint32_t cpuMhz();
 uint32_t displayFrames(); // Completed screen refreshes since boot.
 int batteryPercent();
 bool charging();

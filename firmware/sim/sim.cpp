@@ -66,10 +66,12 @@ bool simCharging = false;
 lv_disp_draw_buf_t drawBuffer;
 lv_disp_drv_t display;
 lv_color_t pixels[240 * 240];
+uint32_t frames = 0; // Completed refreshes, as on the board, so `perf` reports how often the screen redraws.
 void flush(lv_disp_drv_t *drv, const lv_area_t *a, lv_color_t *buf) {
     for (int y = a->y1; y <= a->y2; ++y)
         for (int x = a->x1; x <= a->x2; ++x)
             frame[y * 240 + x] = (buf++)->full;
+    if (lv_disp_flush_is_last(drv)) ++frames;
     lv_disp_flush_ready(drv);
 }
 }
@@ -84,8 +86,10 @@ void boardBegin() {
 }
 void releaseBatteryPower() {}
 void setBacklight(uint8_t percent) { backlight = percent; }
-uint32_t displayFrames() { return 0; }
-void setLowPower(bool) {}
+uint32_t displayFrames() { return frames; }
+uint32_t simMhz = 240;
+void setLowPower(bool low) { simMhz = low ? 80 : 240; }
+uint32_t cpuMhz() { return simMhz; }
 int batteryPercent() { return simBattery; }
 bool charging() { return simCharging; }
 Contact readContact(int &x, int &y) {

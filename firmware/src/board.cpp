@@ -1,4 +1,5 @@
 #include "board.h"
+#include <Arduino.h>
 #include <Wire.h>
 #include <driver/spi_master.h>
 #include <esp_heap_caps.h>
@@ -94,6 +95,7 @@ void setLowPower(bool low) {
     const uint32_t mhz=low?80:240;
     if (getCpuFrequencyMhz()!=mhz) setCpuFrequencyMhz(mhz);
 }
+uint32_t cpuMhz() { return getCpuFrequencyMhz(); }
 void setBacklight(uint8_t percent) { ledcWrite(0,(percent*255+50)/100); }
 void releaseBatteryPower() { digitalWrite(batteryEnable, LOW); }
 bool charging() { return digitalRead(3) == LOW; }

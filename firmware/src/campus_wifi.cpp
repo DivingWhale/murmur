@@ -1,4 +1,5 @@
 #include "campus_wifi.h"
+#include <Arduino.h>
 #include "campus_profile.h"
 #include <WiFi.h>
 #include <esp_wifi.h>
