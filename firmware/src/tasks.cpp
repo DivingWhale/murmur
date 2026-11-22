@@ -1,6 +1,8 @@
 #include "tasks.h"
+#include "pi_sync.h"
 #include "ui_kit.h"
 #include <Preferences.h>
+#include "lock_notes.h"
 
 namespace model {
 namespace {
@@ -38,25 +40,73 @@ void load() {
     state=store.getUShort("tasks",0);
     waiting=store.getUShort("pending",0);
 }
-int today(int *ids,bool completed) {
-    int n=0;
-    for (int i=0;i<maxTasks;++i) if (inToday(i) && done(i)==completed) ids[n++]=i;
-    return n;
+const std::vector<int>& ids(bool today,bool completed) {
+#ifdef ARDUINO_ARCH_ESP32
+    if (piSync::paired()) return piSync::ids(today,completed);
+#endif
+    static std::vector<int> lists[3];
+    auto &list=lists[today?(completed?1:0):2];
+    list.clear();
+    for (int i=0;i<maxTasks;++i)
+        if (inToday(i)==today && (!today || done(i)==completed)) list.push_back(i);
+    return list;
 }
-int later(int *ids) {
-    int n=0;
-    for (int i=0;i<maxTasks;++i) if (!inToday(i)) ids[n++]=i;
-    return n;
+const char *title(int id) {
+#ifdef ARDUINO_ARCH_ESP32
+    if (piSync::paired()) return piSync::title(id);
+#endif
+    return pick(titles[id]); }
+const char *detail(int id) {
+#ifdef ARDUINO_ARCH_ESP32
+    if (piSync::paired()) return piSync::detail(id);
+#endif
+    return id==1?ui::tr("延续","Carried over"):""; }
+const char *deadline(int id) {
+#ifdef ARDUINO_ARCH_ESP32
+    if (piSync::paired()) return piSync::deadline(id);
+#endif
+    return id==3?ui::tr("周五截止","Due Fri"):nullptr; }
+bool done(int id) {
+#ifdef ARDUINO_ARCH_ESP32
+    if (piSync::paired()) return piSync::done(id);
+#endif
+    return state & (1u<<id); }
+bool toggleDone(int id) {
+#ifdef ARDUINO_ARCH_ESP32
+    if (piSync::paired()) return piSync::change(id,false);
+#endif
+    return save(state ^ (1u<<id)); }
+bool moveToToday(int id) {
+#ifdef ARDUINO_ARCH_ESP32
+    if (piSync::paired()) return piSync::change(id,true);
+#endif
+    return save(state | (1u<<(8+id))); }
+unsigned pending() { return piSync::paired()?piSync::pending():waiting; }
+void notePending() { if (piSync::paired()) { piSync::recordingSaved(); return; } ++waiting; store.putUShort("pending",waiting); }
+int noteCount() {
+    if (piSync::paired()) return lockNotes::all().size();
+    return int(sizeof(notes)/sizeof(*notes));
 }
-const char *title(int id) { return pick(titles[id]); }
-const char *detail(int id) { return id==1?ui::tr("延续","Carried over"):""; }
-const char *deadline(int id) { return id==3?ui::tr("周五截止","Due Fri"):nullptr; }
-bool done(int id) { return state & (1u<<id); }
-bool toggleDone(int id) { return save(state ^ (1u<<id)); }
-bool moveToToday(int id) { return save(state | (1u<<(8+id))); }
-unsigned pending() { return waiting; }
-void notePending() { ++waiting; store.putUShort("pending",waiting); }
-int noteCount() { return int(sizeof(notes)/sizeof(*notes)); }
-const char *note(int index) { return pick(notes[index]); }
-const char *noteTime(int index) { return pick(noteTimes[index]); }
+int noteId(int index) {
+    if (piSync::paired()) return lockNotes::all()[noteCount()-1-index].id;
+    return index+1;
+}
+const char *note(int index) {
+    if (piSync::paired()) return lockNotes::all()[noteCount()-1-index].text.c_str();
+    return pick(notes[index]);
+}
+const char *noteTime(int index) {
+    if (piSync::paired()) {
+        const auto &stamp=lockNotes::all()[noteCount()-1-index].stamp;
+        int month,day,hour,minute;
+        if (sscanf(stamp.c_str(),"%*4d-%2d-%2dT%2d:%2d",&month,&day,&hour,&minute)!=4 || month<1 || month>12)
+            return ui::tr("录音时间未知","Recording time unknown");
+        static const char *months[]={"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
+        static char formatted[48];
+        if (ui::en) snprintf(formatted,sizeof(formatted),"%d %s · %02d:%02d",day,months[month-1],hour,minute);
+        else snprintf(formatted,sizeof(formatted),"%d月%d日 %02d:%02d",month,day,hour,minute);
+        return formatted;
+    }
+    return pick(noteTimes[index]);
+}
 }

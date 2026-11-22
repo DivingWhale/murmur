@@ -37,6 +37,30 @@ A flash reset and a complete loss of board power are different test conditions. 
 
 All tests on a Windows PC unless noted.
 
+### 2026-11-22: paired lock-screen notes and strict extraction
+
+Four synthetic transcripts sent from the Pi to Beijing Bailian with strict JSON Schema passed the field checks and expected task/note counts for note-only, task-only, mixed and filler speech. An additional synthetic Mandarin WAV went through the deployed TLS service, Qwen ASR and DeepSeek Flash, producing one note and zero tasks.
+
+One application-only flash passed flash verification. COM5 reported HTTP 200, two existing tasks and one new note. The card snapshot included the expected Chinese excerpt and original recording time. After removing the owned synthetic recording from the Pi and syncing again, COM5 reported two tasks and zero notes. The active card snapshot was empty. All 24 pre-existing files matched their original SHA-256 hashes.
+
+The firmware simulator rendered Chinese content on an English lock screen, switched date language, handled an unknown timestamp and returned to the same frame after a rotation. The existing English tour and interaction screenshots matched their previous hashes. A native run of the cache code on the Pi with an isolated directory checked two-page publication, restoration in a new process and recovery from a damaged primary file.
+
+### 2026-11-22: Chinese task titles in English and new-task feedback
+
+The host simulator rendered a Chinese task and a mixed Latin/Chinese title in English Today using the shipped 16 px face. The six body text sizes contained the same 3,767 code points. The sync notice scene showed a next-day task after unlocking, cleared it after three seconds, and showed a count for two arrivals during recording after Saved. The standard interaction and English tour screenshots matched their previous hashes.
+
+One application-only flash passed the device hash check. COM5 reported a paired HTTP 200 sync, two tasks and an empty queue. The card cache retained the current-day and next-day tasks with their original Chinese titles and local times. All 24 existing card files, including 20 WAVs, matched their pre-flash SHA-256 hashes. Visual checks used simulator frames.
+
+### 2026-11-22: Pi voice sync
+
+One application-only flash preserved the saved campus login. COM5 answered the sync, Wi-Fi, clock and performance commands. After USB pairing, the board reached the Pi over campus Wi-Fi, completed a TLS sync with HTTP 200 and turned the radio off. All 20 pre-existing card files matched their SHA-256 hashes, including 18 WAVs. The simulator interaction contact sheet matched the previous shade-fixed baseline.
+
+A separate database on the Pi received a synthetic WAV in two chunks, including a repeated chunk. The installed service called both cloud models, returned one task naming Obsidian for 09:00 two days after capture, and accepted a repeated completion update. The fixture stayed out of the live task list.
+
+A second, future-dated fixture exercised the production service and actual handheld download. The card cache contained the expected title and planned time. Removing only the test recording and its results, then syncing, restored the empty live task cache. Both cloud fixtures used synthetic PCM.
+
+Two wired sessions with Windows drive access around sync recorded a task-watchdog reset after the radio went off. Both retained phase 8 and Wi-Fi step 0; the last recorded event was USB configuration. A pre-update diagnostic log contains the same reset and phase. These logs do not establish a cause. With no host drive queries during the next three consecutive sync cycles, the handheld returned HTTP 200, turned off Wi-Fi and retained the same boot ID each time.
+
 ### 2026-11-21: USB baseline
 
 On the USB-powered test unit, four consecutive flashes brought back COM5 and drive F automatically. Windows mounted the volume about 22 seconds after COM5 appeared. The final three runs passed the 45-second check and all 11 existing WAVs were readable.

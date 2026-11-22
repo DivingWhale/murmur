@@ -69,7 +69,7 @@ Coordinates are from the screen's top-left corner. The prototype has an exact ex
 - **Note:** the excerpt of one lock-screen note, starting 10px below the header.
 - **Recording time** under the note: the exact time it was recorded, `15 Nov · 09:22` / `11月15日 09:22`. Use the wall-clock time from `recorded_at` as written; don't convert time zones. Notes have **no title**.
 - **Footer** (10px from the bottom): position dots on the left (only if there is more than one note) and the hint `OK/↑ unlock · + record` / `OK/上滑 解锁 · + 录音` on the right.
-- **No notes:** show `No notes chosen yet. Pick Miscellaneous notes on your computer.` / `还没有选择笔记。请在电脑上挑选随记。`
+- **No notes:** show `No notes yet.` / `还没有随记。` A recording with an unknown capture time shows `Recording time unknown` / `录音时间未知`.
 - **Rotation:** move to the next note every `interval_s` seconds (default 6).
 - **Touch:** only deliberate swipes count, and taps are ignored (pocket safety).
   - **Swipe left/right** of ≥ 24 px (≈ 2.8 mm) shows the next/previous note (slides in, 0.28 s) and restarts the rotation timer.
@@ -84,7 +84,7 @@ Coordinates are from the screen's top-left corner. The prototype has an exact ex
   - All synced: a check icon in muted colour.
   - Waiting, online: a sync icon and a count, in sync colour.
   - Waiting, offline: a Wi-Fi-off icon and a count, in muted colour.
-  - The count is the number of local changes (task edits and saved recordings) not yet sent to the Pi. Until the Pi sync exists, nothing clears it.
+  - On a paired handheld the count includes recordings awaiting durable receipt and tasks with unsent edits. Multiple edits to one task send its latest state.
 - **Task list:** **2 rows visible** (60px each, 3px gap). The window scrolls so the highlighted row is always visible.
 - **Vertical drag:** the list follows the finger continuously and can rest partway through a row. The firmware scroll container supports momentum. The header and bottom line stay pinned. A drag consumes the tap even at either end.
 - **Task row:** a 20px circle checkbox, then the title, then a meta line underneath. The meta line can contain `Carried over`, a detail such as `Print shop`, and a deadline in due colour (`Due Fri`, `Due today` or `Overdue`), joined with ` · `.
@@ -94,7 +94,7 @@ Coordinates are from the screen's top-left corner. The prototype has an exact ex
   - **Label row:** `WHEN I HAVE TIME` / `有空再做` with position dots. When highlighted, the label changes to `PAUSED · OK TO CHOOSE` / `已暂停 · 按 OK 选择` in focus colour.
   - **Title row:** the task title, then a due chip (`Due Fri`) if the task has a deadline.
   - **Rotation:** show the next task every 3 s. If the title scrolls (§6), wait until one full loop has finished before rotating. Rotation pauses while the line is highlighted.
-- **Toast:** after a sync, a pill 82px from the bottom shows the result, for example `+1 task`, `+1 note · +1 task`, `+1 task for tomorrow` or `Synced`. It stays for 3 s.
+- **Toast:** when a sync adds a task, Today shows its schedule and original title for 3 s, for example `Tomorrow 09:00 · 还书`. An unscheduled task shows its deadline or `When I have time`. Several new tasks show a count. Results received during recording or sleep wait until Today is visible. The pill sits 82px from the bottom.
 
 ### 4.3 "Move to Today?" picker (full screen)
 - **Contents, from top to bottom:**
@@ -185,7 +185,7 @@ Not every feature needs a button. Only frequent actions are on keys. Pages are r
 | Row | Value | Action |
 |---|---|---|
 | Wi-Fi / `Wi-Fi` | Network state and SSID | Tap or press OK to retry the saved campus login. Initial provisioning uses USB (`docs/campus-wifi.md`). |
-| Sync now / `立即同步` | sub-line: last sync time | Sync |
+| Sync now / `立即同步` | sub-line: current sync status | Sync |
 | Language / `语言` | `English` / `中文` | Toggle |
 | Brightness / `亮度` | `80%` | Opens the Brightness screen |
 | Auto-sleep / `自动休眠` | `30 s` · `1 min` · `5 min` · `Never` (default 1 min) | Cycle |
@@ -263,7 +263,7 @@ Applies to task titles and the bottom-line title.
 - **Recording is refused:**
   - when the battery is ≤ 3% and not charging (Battery too low screen);
   - when the microSD card is full, or a write fails (Card full screen).
-- **Sync flow:** after Saved, turn Wi-Fi on, then: campus authentication → upload → wait for the Pi to process → fetch results and lock-screen notes (`GET /v1/lockscreen` with `If-None-Match`) → turn Wi-Fi off → return to Today with a toast.
+- **Paired device sync:** after Saved, the handheld uploads the WAV in the background, then sends task edits and fetches tasks and all lock-screen notes. A later session collects results if the Pi takes longer than the current Wi-Fi window. It keeps the current note across a refresh when its ID is still present. New notes appear in the Today sync feedback, with a combined count for mixed results.
 - **If sync fails:** offline, timed out or connection lost, keep the items pending, turn Wi-Fi off, and retry at the next wake or the end of the next recording.
 
 ## 9. Battery
@@ -284,7 +284,7 @@ Campus Wi-Fi (WPA2-Enterprise, PEAP) is covered separately in `docs/campus-wifi.
 1. **Buttons:** which GPIOs PLUS, NEXT and OK use, and whether all three can wake the ESP32-S3 from deep sleep. If they can't, use light sleep instead.
 2. **Charging:** whether the board reports charging status, which the lightning bolt needs.
 3. **Battery voltage:** whether the board can read it through an ADC divider.
-4. **Fonts:** whether the font subset at five sizes fits in flash alongside the firmware and OTA partitions. If it doesn't, drop the 13px and 20px Chinese sizes.
+4. **Fonts:** the shipped image fits the Chinese subset at all six text sizes within the 7 MiB application slot.
 
 ## 12. Acceptance checks
 

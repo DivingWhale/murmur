@@ -33,7 +33,7 @@ After authentication and DHCP the handheld sets its clock via SNTP. After a succ
 The Raspberry Pi sends the audio for transcription, then sends the transcript to an AI model to interpret the speaker's intent. The user can speak naturally and cover several things in one recording.
 
 - **Tasks.** Extract actionable items and keep the details needed to carry them out. "Print the report and ask about binding while I'm at the print shop" can be one errand with both details.
-- **Miscellaneous notes.** File observations, ideas, and reflections in this Obsidian category. If a recording also contains a task, keep the speaker's words in the note and extract the task separately. A shared recording ID can link the two.
+- **Miscellaneous notes.** Keep observations, ideas and reflections in the speaker's language. All notes sync to the handheld's lock screen by default. If a recording also contains a task, keep the speaker's words in the note and extract the task separately. A shared recording ID links both. The Pi keeps the full body for future Obsidian integration.
 - **Dates.** Interpret relative dates using the time of recording. If the user says "pick up the parcel tomorrow" on Monday and the device syncs on Wednesday, the task is dated Tuesday. The device timestamps recordings and synchronizes its clock when online. If the date cannot be established reliably, preserve the original phrase for review.
 
 ## The on-device task list
@@ -50,7 +50,7 @@ A task with an explicit planned day enters Today on that day. The device caches 
 
 ## Campus sync and Obsidian
 
-1. **Connect after recording.** Once the recording is saved locally, the device enables Wi-Fi, authenticates with the campus account, and connects to the Pi on the campus network. Before implementation, verify 2.4 GHz availability, the required EAP method and certificates, and the device's access to the Pi's service port.
+1. **Connect after recording.** Once the recording is saved locally, the device enables Wi-Fi, authenticates with the campus account, and connects to the Pi on the campus network. The paired handheld uses TLS with a device-specific shared key on TCP port 8443.
 2. **Upload and process.** The Pi acknowledges receipt after it has saved the complete recording. It then handles transcription, classification, and storage of the results. API keys stay on the Pi.
 3. **Update the handheld.** In the normal flow, the device retrieves the result, saves any tasks locally, and switches Wi-Fi off. If the network is unavailable or processing times out, it retains the pending state and switches Wi-Fi off. The proposed retry points are the next device wake or the end of the next recording. The Pi holds completed results until the device reconnects. Stable IDs for recordings and tasks ensure that retrying creates each intended note or task only once.
 4. **Update Obsidian.** The computer's vault receives Markdown notes and task completion updates. If the computer is off, the Pi holds the updates until it returns. The handheld remains the primary place to manage tasks. Development and deployment should favor command-line tools.
@@ -59,7 +59,7 @@ A task with an explicit planned day enters Today on that day. The device caches 
 
 We considered calling the APIs directly from the handheld, running a public cloud service, and using the Raspberry Pi on campus. The Pi is the chosen backend because campus devices can reach one another and it can finish processing after the handheld turns off Wi-Fi.
 
-Before implementation, choose the transcription service, classification model provider, audio retention period, and method for syncing the Pi with the Obsidian vault. A third-party transcription service receives the audio. The classification API receives the transcript. Configure both according to the chosen providers and retention policy.
+The Pi uses Beijing Bailian’s Qwen ASR Flash for transcription and DeepSeek Flash for task and note extraction. It retains the original audio and transcript. Automatic expiry and the method for syncing the Pi with the Obsidian vault remain open. See [Pi service and pairing](../backend/README.md).
 
 ## First acceptance test
 

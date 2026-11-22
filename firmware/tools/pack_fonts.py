@@ -44,7 +44,7 @@ def pack(inputs):
         latin = make_font(inputs / ("jetbrainsmono.ttf" if size == 56 else "inter.ttf"), size, 600 if size >= 34 else 500)
         chinese = make_font(inputs / "notosanssc.ttf", size, 650 if size == 13 else 500)
         codes = set(range(32, 127)) | {183, 8230, 9633}
-        if size in (13, 14, 17, 18, 20):
+        if size in (13, 14, 16, 17, 18, 20):
             codes |= han
         if size >= 34:
             codes = set(map(ord, "0123456789:-"))

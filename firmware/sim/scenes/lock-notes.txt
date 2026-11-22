@@ -1,0 +1,16 @@
+serial en
+clear-notes
+wait 500
+shot no-notes
+lock-note 1 - Walking outside helped me think.
+lock-note 2 2026-11-22T09:05:00+08:00 下过雨，校园里的桂花特别香。
+wait 500
+shot english-lock-chinese-note
+press next
+wait 450
+shot unknown-time
+wait 6100
+shot rotated-note
+serial zh
+wait 400
+shot chinese-stamp
