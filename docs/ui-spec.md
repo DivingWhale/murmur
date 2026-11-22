@@ -84,7 +84,7 @@ Coordinates are from the screen's top-left corner. The prototype has an exact ex
   - All synced: a check icon in muted colour.
   - Waiting, online: a sync icon and a count, in sync colour.
   - Waiting, offline: a Wi-Fi-off icon and a count, in muted colour.
-  - The count is the number of local changes (task edits and saved recordings) not yet sent to the Pi. Until the Pi sync exists, nothing clears it.
+  - On a paired handheld the count includes recordings awaiting durable receipt and tasks with unsent edits. Multiple edits to one task send its latest state.
 - **Task list:** **2 rows visible** (60px each, 3px gap). The window scrolls so the highlighted row is always visible.
 - **Vertical drag:** the list follows the finger continuously and can rest partway through a row. The firmware scroll container supports momentum. The header and bottom line stay pinned. A drag consumes the tap even at either end.
 - **Task row:** a 20px circle checkbox, then the title, then a meta line underneath. The meta line can contain `Carried over`, a detail such as `Print shop`, and a deadline in due colour (`Due Fri`, `Due today` or `Overdue`), joined with ` · `.
@@ -185,7 +185,7 @@ Not every feature needs a button. Only frequent actions are on keys. Pages are r
 | Row | Value | Action |
 |---|---|---|
 | Wi-Fi / `Wi-Fi` | Network state and SSID | Tap or press OK to retry the saved campus login. Initial provisioning uses USB (`docs/campus-wifi.md`). |
-| Sync now / `立即同步` | sub-line: last sync time | Sync |
+| Sync now / `立即同步` | sub-line: current sync status | Sync |
 | Language / `语言` | `English` / `中文` | Toggle |
 | Brightness / `亮度` | `80%` | Opens the Brightness screen |
 | Auto-sleep / `自动休眠` | `30 s` · `1 min` · `5 min` · `Never` (default 1 min) | Cycle |
@@ -263,7 +263,7 @@ Applies to task titles and the bottom-line title.
 - **Recording is refused:**
   - when the battery is ≤ 3% and not charging (Battery too low screen);
   - when the microSD card is full, or a write fails (Card full screen).
-- **Sync flow:** after Saved, turn Wi-Fi on, then: campus authentication → upload → wait for the Pi to process → fetch results and lock-screen notes (`GET /v1/lockscreen` with `If-None-Match`) → turn Wi-Fi off → return to Today with a toast.
+- **Paired device sync:** after Saved, the handheld uploads the WAV in the background, then sends task edits and fetches the current task list. A later session collects results if the Pi takes longer than the current Wi-Fi window. The lock screen shows its empty state until computer-selected notes are integrated.
 - **If sync fails:** offline, timed out or connection lost, keep the items pending, turn Wi-Fi off, and retry at the next wake or the end of the next recording.
 
 ## 9. Battery

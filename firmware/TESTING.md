@@ -37,6 +37,12 @@ A flash reset and a complete loss of board power are different test conditions. 
 
 All tests on a Windows PC unless noted.
 
+### 2026-11-22: Pi voice sync
+
+One application-only flash preserved the saved campus login. COM5 answered the sync, Wi-Fi, clock and performance commands. After USB pairing, the board reached the Pi over campus Wi-Fi, completed a TLS sync with HTTP 200 and turned the radio off. All 20 pre-existing card files matched their SHA-256 hashes, including 18 WAVs. The simulator interaction contact sheet matched the previous shade-fixed baseline.
+
+A separate database on the Pi received a synthetic WAV in two chunks, including a repeated chunk. The installed service called both cloud models, returned one task naming Obsidian for 09:00 two days after capture, and accepted a repeated completion update. The fixture stayed out of the live task list.
+
 ### 2026-11-21: USB baseline
 
 On the USB-powered test unit, four consecutive flashes brought back COM5 and drive F automatically. Windows mounted the volume about 22 seconds after COM5 appeared. The final three runs passed the 45-second check and all 11 existing WAVs were readable.

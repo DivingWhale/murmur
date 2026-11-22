@@ -10,6 +10,7 @@
 #include "icons.h"
 #include "ui_kit.h"
 #include "tasks.h"
+#include "pi_sync.h"
 #include <Preferences.h>
 #include <esp_task_wdt.h>
 #include <sys/time.h>
@@ -126,13 +127,13 @@ void paintWave() {
     }
 }
 lv_obj_t *overlay, *progressFill;
-lv_obj_t *tickerTitle, *tickerChip, *tickerChipText, *tickerDots[model::maxTasks];
+lv_obj_t *tickerTitle, *tickerChip, *tickerChipText, *tickerDots[6];
 lv_anim_t scrollAnimation;
 unsigned lastSeconds;
 uint8_t lastLevel;
 struct Item { const char *zh, *english; }; // A label in both languages.
 // Screens list Today's unfinished tasks, or the finished ones when the header count is tapped.
-int tasks(bool today,int *ids) { return today?model::today(ids,showCompleted):model::later(ids); }
+const std::vector<int>& tasks(bool today) { return model::ids(today,showCompleted); }
 void storeBrightness();
 lv_obj_t *buildShade();
 void releaseShade(bool open,Screen from);
@@ -209,7 +210,7 @@ void audioError(AudioResult r) {
 void recordKey() {
     if (recordingActive()) {
         auto result=finishRecording();
-        if (result==AudioResult::Ok) { model::notePending(); go(Screen::Saved); startCampusWifiAfterRecording(); } // Upload point once the Pi sync exists.
+        if (result==AudioResult::Ok) { model::notePending(); go(Screen::Saved); startCampusWifiAfterRecording(); }
         else audioError(result);
         return;
     }
@@ -322,6 +323,11 @@ void lockView() {
     refreshClock();
 
     int noteTop=top+headerHeight+10;
+    if (piSync::paired()) {
+        label(14,noteTop,212,tr("还没有选择笔记。","No notes chosen yet."),17,muted);
+        label(40,211,186,tr("OK/上滑 解锁 · + 录音","OK/↑ unlock · + record"),14,muted,LV_TEXT_ALIGN_RIGHT);
+        return;
+    }
     auto *body=label(14,noteTop,212,model::note(note),en?17:18,ink,LV_TEXT_ALIGN_LEFT,LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(body,en?2:4,0);
     lv_obj_update_layout(body);
@@ -339,7 +345,7 @@ lv_obj_t *scrollTitle(int x,int y,int w,const char *s,bool scroll,bool done=fals
     if (done) lv_obj_set_style_text_decor(o,LV_TEXT_DECOR_STRIKETHROUGH,0);
     return o;
 }
-void updateTicker(int *later,int count) {
+void updateTicker(const std::vector<int>& later,int count) {
     ticket%=count;
     int id=later[ticket], width=model::deadline(id)?145:210;
     lv_obj_set_width(tickerTitle,width);
@@ -349,8 +355,8 @@ void updateTicker(int *later,int count) {
         lv_obj_clear_flag(tickerChip,LV_OBJ_FLAG_HIDDEN);
     }
     else lv_obj_add_flag(tickerChip,LV_OBJ_FLAG_HIDDEN);
-    for (int i=0;i<count;++i)
-        lv_obj_set_style_bg_color(tickerDots[i],lv_color_hex(i==ticket?ink:dim),0);
+    for (int i=0;i<min(count,6);++i)
+        lv_obj_set_style_bg_color(tickerDots[i],lv_color_hex(i==ticket%6?ink:dim),0);
     int textWidth=lv_txt_get_width(model::title(id),strlen(model::title(id)),fontFor(en?16:17),0,LV_TEXT_FLAG_NONE);
     scrollPeriod=textWidth<=width?3000:1000+(textWidth+40)*1000/30;
     animateNote(tickerTitle); animateNote(tickerChip);
@@ -367,8 +373,43 @@ void syncStatus(int right,int cy) {
     if (online) icon(parent,Icon::Sync,11,right-w-4-11,cy-6,color);
     else icon(parent,Icon::WifiOff,12,right-w-4-12,cy-6,color);
 }
+void taskRow(int id,int i,int y) {
+    bool focus=focused==i, done=model::done(id);
+    if (focus) box(5,y,230,layout::rowHeight,surface,9,yellow,2);
+    box(15,y+20,20,20,done?muted:(focus?surface:bg),10,done?muted:dim,2);
+    if (done) icon(panelRoot,Icon::Tick,12,19,y+24,bg);
+    const char *dueText=model::deadline(id);
+    String combined;
+    if (piSync::paired() && dueText && *model::detail(id))
+        combined=String(dueText)+" · "+model::detail(id);
+    const char *meta=*combined.c_str()?combined.c_str():(dueText?dueText:model::detail(id));
+    scrollTitle(45,y+(*meta?8:19),178,model::title(id),focus,done);
+    if (*meta) label(45,y+33,178,meta,14,model::deadline(id)?due:muted);
+}
+lv_obj_t *rowCells[6];
+int firstVisible;
+void fillTaskWindow(lv_obj_t *list) {
+    if (list!=taskList) return;
+    const auto &ids=tasks(true);
+    int first=max(0,int(lv_obj_get_scroll_y(list))/layout::rowPitch-1);
+    if (first==firstVisible) return;
+    firstVisible=first;
+    auto *old=panelRoot;
+    for (int slot=0;slot<6;++slot) {
+        auto *cell=rowCells[slot];
+        int i=first+slot;
+        lv_obj_clean(cell);
+        if (i>=int(ids.size())) {lv_obj_add_flag(cell,LV_OBJ_FLAG_HIDDEN); continue;}
+        lv_obj_clear_flag(cell,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_y(cell,i*layout::rowPitch);
+        panelRoot=cell;
+        taskRow(ids[i],i,0);
+    }
+    panelRoot=old;
+}
 void todayView() {
-    int ids[model::maxTasks],later[model::maxTasks],n=tasks(true,ids),k=tasks(false,later);
+    const auto &ids=tasks(true), &later=tasks(false);
+    int n=ids.size(),k=later.size();
     focused=constrain(focused,0,max(0,n-(k==0)));
     char remaining[32];
     snprintf(remaining,sizeof(remaining),showCompleted?tr("已完成：%d","Done: %d"):tr("剩余数：%d","Left: %d"),n);
@@ -387,15 +428,17 @@ void todayView() {
     lv_obj_set_scrollbar_mode(taskList,LV_SCROLLBAR_MODE_OFF);
     panelRoot=taskList;
     if (!n) center(47,showCompleted?tr("暂无已完成任务","No completed tasks"):tr("全部完成","All clear"),17,muted);
-    for (int i=0;i<n;++i) {
-        int id=ids[i],y=i*layout::rowPitch;
-        bool focus=focused==i, done=model::done(id);
-        if (focus) box(5,y,230,layout::rowHeight,surface,9,yellow,2);
-        box(15,y+20,20,20,done?muted:(focus?surface:bg),10,done?muted:dim,2);
-        if (done) icon(taskList,Icon::Tick,12,19,y+24,bg);
-        const char *meta=model::deadline(id)?model::deadline(id):model::detail(id);
-        scrollTitle(45,y+(*meta?8:19),178,model::title(id),focus,done);
-        if (*meta) label(45,y+33,178,meta,14,model::deadline(id)?due:muted);
+    if (n<=12) {
+        for (int i=0;i<n;++i) taskRow(ids[i],i,i*layout::rowPitch);
+    } else {
+        // Reserve the full scroll distance, but keep only the nearby rows in LVGL's heap.
+        box(0,n*layout::rowPitch-4,1,1,bg);
+        for (auto &cell:rowCells) cell=box(0,0,240,layout::rowPitch,bg);
+        firstVisible=-1;
+        fillTaskWindow(taskList);
+        lv_obj_add_event_cb(taskList,[](lv_event_t *event){
+            fillTaskWindow(lv_event_get_target(event));
+        },LV_EVENT_SCROLL,nullptr);
     }
     panelRoot=previousParent;
     lv_obj_update_layout(taskList);
@@ -412,14 +455,14 @@ void todayView() {
     label(14,179,183,pause?tr("已暂停 · 按 OK 选择","PAUSED · OK TO CHOOSE"):
                         tr("有空再做","WHEN I HAVE TIME"),13,pause?yellow:muted);
     if (!k) { label(14,201,210,tr("暂无任务","Nothing waiting"),17,dim); return; }
-    for (int i=0;i<k;++i) tickerDots[i]=box(226-9*k+9*i,185,5,5,dim,3);
+    for (int i=0;i<min(k,6);++i) tickerDots[i]=box(226-9*min(k,6)+9*i,185,5,5,dim,3);
     tickerTitle=scrollTitle(14,200,210,"",true);
     tickerChip=box(166,200,60,23,0x30251c,8);
     tickerChipText=label(0,2,60,"",13,due,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,tickerChip);
     updateTicker(later,k);
 }
 void pickerView() {
-    int ids[model::maxTasks],n=tasks(false,ids);
+    const auto &ids=tasks(false); int n=ids.size();
     if (!n) { go(Screen::Today); return; }
     ticket%=n;
     center(18,tr("移到今天？","MOVE TO TODAY?"),14,yellow);
@@ -433,13 +476,13 @@ void pickerView() {
     const int rowY=(lines==1?53:41)+lines*fontFor(20)->line_height+8;
     const char *deadline=model::deadline(ids[ticket]);
     const bool chip=deadline!=nullptr;
-    const int dotsWidth=n>1?9*n-4:0, chipWidth=chip?60:0, gap=chip && n>1?10:0;
+    const int dotsWidth=n>1?9*min(n,6)-4:0, chipWidth=chip?60:0, gap=chip && n>1?10:0;
     const int rowX=(240-chipWidth-gap-dotsWidth)/2;
     if (chip) {
         auto *c=box(rowX,rowY-4,60,23,0x30251c,8);
         label(0,2,60,deadline,13,due,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,c);
     }
-    if (n>1) dots(rowX+chipWidth+gap,rowY+5,n,ticket);
+    if (n>1) dots(rowX+chipWidth+gap,rowY+5,min(n,6),ticket%6);
     const Rect &c=layout::pickCancel, &m=layout::pickMove;
     box(c.x,c.y,c.w,c.h,surface,9);
     box(m.x,m.y,m.w,m.h,yellow,9);
@@ -538,7 +581,7 @@ void settingsView() {
         const char *sub="";
         switch(i) {
         case Network: value=campusOnline()?tr("在线","Online"):tr("离线","Offline"); sub=campusOnline()?"HKUSTGZ":tr("未连接","Disconnected"); break;
-        case Sync: sub=tr("尚未同步","Never synced"); break;
+        case Sync: sub=piSync::paired()?piSync::statusText():tr("尚未同步","Never synced"); break;
         case Language: value=tr("中文","English"); break;
         case Bright: value=String(brightness*5)+"%"; break;
         case AutoSleep: value=tr(times[sleepOption].zh,times[sleepOption].english); break;
@@ -574,6 +617,7 @@ void changeLanguage() {
     en=!en; prefs.putBool("english",en); dirty=true;
 }
 void syncNow() {
+    if (piSync::paired()) piSync::request();
     if (screen==Screen::Panel) go(panelFrom);
     offlineToast=true; toastStarted=millis(); dirty=true;
 }
@@ -754,7 +798,7 @@ void render() {
     pageMotion=Motion::None; slideDirection=0;
     if (offlineToast) {
         // Prototype toast: an ink pill 82 px above the bottom edge.
-        const char *text=campusOnline()?tr("尚未同步","Never synced"):tr("离线","Offline");
+        const char *text=piSync::paired()?piSync::statusText():(campusOnline()?tr("尚未同步","Never synced"):tr("离线","Offline"));
         const int w=lv_txt_get_width(text,strlen(text),fontFor(14),0,LV_TEXT_FLAG_NONE)+24, h=fontFor(14)->line_height+10;
         toast=box((240-w)/2,240-82-h,w,h,ink,h/2);
         label(0,5,w,text,14,bg,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,toast);
@@ -766,22 +810,25 @@ void saveChange(bool saved) {
     dirty=true;
 }
 void choose() {
-    int ids[model::maxTasks],n=tasks(false,ids);
+    const auto &ids=tasks(false); int n=ids.size();
     if (!n) return;
     int id=ids[ticket%n];
     showCompleted=false; revealFocus=true;
     go(Screen::Today);
     saveChange(model::moveToToday(id));
-    int today[model::maxTasks];
-    int count=tasks(true,today);
+    const auto &today=tasks(true);
+    int count=today.size();
     for (int i=0;i<count;++i) if (today[i]==id) focused=i;
     ticket=0;
 }
 void browse(int step) {
     slideDirection=step;
-    if (screen==Screen::Lock) note=(note+step+model::noteCount())%model::noteCount();
+    if (screen==Screen::Lock) {
+        if (piSync::paired()) { rotated=millis(); return; }
+        note=(note+step+model::noteCount())%model::noteCount();
+    }
     else {
-        int ids[model::maxTasks],n=tasks(false,ids);
+        const auto &ids=tasks(false); int n=ids.size();
         if (!n) return;
         ticket=(ticket+step+n)%n;
     }
@@ -791,7 +838,8 @@ void browse(int step) {
 void shortKey(int pin) {
     if (pin==plusPin) { recordKey(); return; }
     bool ok=pin==okPin;
-    int ids[model::maxTasks],later[model::maxTasks],n=tasks(true,ids),k=tasks(false,later);
+    const auto &ids=tasks(true), &later=tasks(false);
+    int n=ids.size(),k=later.size();
     interacted=millis();
     switch(screen) {
     case Screen::Recording: if (!ok) askDiscard(); break;
@@ -901,7 +949,9 @@ void pollKeys(uint32_t now) {
 void gesture(int x,int y,int dx,int dy) {
     const bool horizontal=abs(dx)>12 && abs(dx)>abs(dy);
     const bool tap=abs(dx)<=12 && abs(dy)<=12;
-    int step=dx<0?1:-1, ids[model::maxTasks], later[model::maxTasks], n=tasks(true,ids), k=tasks(false,later);
+    int step=dx<0?1:-1;
+    const auto &ids=tasks(true), &later=tasks(false);
+    int n=ids.size(),k=later.size();
     interacted=millis();
     if (recordingActive()) {
         const bool save=layout::recSave.contains(x,y);
@@ -1106,7 +1156,7 @@ void pollTouch(uint32_t now) {
     }
 }
 void updateView(uint32_t now) {
-    int ids[model::maxTasks],n=tasks(true,ids);
+    int n=tasks(true).size();
     bool idleScreen=screen==Screen::Lock || screen==Screen::Today || screen==Screen::MD ||
                     screen==Screen::Claude || screen==Screen::Panel || screen==Screen::Settings ||
                     screen==Screen::Brightness;
@@ -1121,7 +1171,7 @@ void updateView(uint32_t now) {
     if (screen==Screen::Today && !overlay) {
         if (focused==n && now-interacted>=10000) { focused=0; rotated=now; dirty=true; }
         else if (!dirty && focused!=n && now-rotated>=scrollPeriod) {
-            int later[model::maxTasks], count=tasks(false,later);
+            const auto &later=tasks(false); int count=later.size();
             if (count>1) { ++ticket; slideDirection=1; updateTicker(later,count); slideDirection=0; }
             rotated=now;
         }
@@ -1191,6 +1241,7 @@ void serialSettings() {
         buf[len]=0; len=0;
         if (overflow) { usbSerial.println("error input too long"); overflow=false; }
         else if (!strncmp(buf,"log ",4)) diagnostics::command(buf+4);
+        else if (!strncmp(buf,"sync ",5)) { piSync::command(buf+5,usbSerial); dirty=true; }
         else if (!strncmp(buf,"wifi ",5)) {
             campusCommand(buf+5,usbSerial);
             if (screen==Screen::Settings || screen==Screen::Panel) dirty=true;
@@ -1236,6 +1287,7 @@ void setup() {
     savedBrightness=brightness=constrain(int(prefs.getUChar("brightness",16)),1,20);
     sleepOption=constrain(int(prefs.getUChar("sleep",1)),0,3);
     model::load();
+    piSync::begin();
     battery=batteryPercent();
     isCharging=chargeSample=charging();
     chargeChangedAt=millis();
@@ -1277,6 +1329,7 @@ void loop() {
         refreshClock();
         if (screen==Screen::Settings || screen==Screen::Panel || screen==Screen::SetClock) dirty=true;
     }
+    if (piSync::service(recordingActive(),screen==Screen::Picker)) dirty=true;
     diagLoopPhase(6);
     updateView(millis());
     diagLoopPhase(7);

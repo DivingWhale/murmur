@@ -1,4 +1,5 @@
 #include "campus_wifi.h"
+#include "pi_sync.h"
 #include "campus_profile.h"
 #include "diagnostics.h"
 #include <WiFi.h>
@@ -286,10 +287,10 @@ bool serviceCampusWifi() {
         const uint32_t now=millis(), synced=sessionTimeAt.load();
         const bool done=WiFi.status()!=WL_CONNECTED ||
             (manualSession ? now-onlineAt>=manualOnlineLimit
-                           : (synced && now-synced>=autoAfterTime) || now-onlineAt>=autoOnlineLimit);
+                           : !piSync::keepRadio() && ((synced && now-synced>=autoAfterTime) || now-onlineAt>=autoOnlineLimit));
         if (done) { stopRadio(State::Off); return true; }
     }
-    return clockUpdated.exchange(false);
+    return state==State::Online && clockUpdated.exchange(false);
 }
 void campusCommand(char *cmd,Print &out) {
     if (!strcmp(cmd,"diag")) {
@@ -369,7 +370,7 @@ void startCampusWifiOnWake() {
     if (backoffRemaining()) return;
     // A login costs several seconds of radio time. Only repeat it on wake when
     // the clock needs setting or the last session is old.
-    if (time(nullptr)<1704067200 || !everOnline || millis()-onlineAt>=wakeInterval)
+    if (time(nullptr)<1704067200 || !everOnline || piSync::needsWake() || millis()-onlineAt>=wakeInterval)
         startSavedCampusWifi(false);
 }
 void stopCampusWifi() {
