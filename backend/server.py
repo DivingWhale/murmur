@@ -9,6 +9,7 @@ import struct
 import tempfile
 import threading
 import time
+import unicodedata
 import wave
 from contextlib import contextmanager
 from datetime import datetime
@@ -31,6 +32,8 @@ CREATE TABLE IF NOT EXISTS segments(name TEXT, part INTEGER, text TEXT, PRIMARY 
 CREATE TABLE IF NOT EXISTS tasks(id INTEGER PRIMARY KEY, source TEXT NOT NULL, title TEXT, details TEXT,
  planned_at TEXT, due_at TEXT, done INTEGER DEFAULT 0, promoted INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS notes(id INTEGER PRIMARY KEY, source TEXT NOT NULL, body TEXT);
+CREATE TABLE IF NOT EXISTS note_version(id INTEGER PRIMARY KEY CHECK(id=1), token TEXT NOT NULL);
+INSERT OR IGNORE INTO note_version VALUES(1,lower(hex(randomblob(12))));
 """
 
 
@@ -50,6 +53,9 @@ def initialize():
     with database() as db:
         db.execute("PRAGMA journal_mode=WAL")
         db.executescript(SCHEMA)
+        for event in ("INSERT", "UPDATE", "DELETE"):
+            db.execute(f"""CREATE TRIGGER IF NOT EXISTS notes_after_{event} AFTER {event} ON notes BEGIN
+                       UPDATE note_version SET token=lower(hex(randomblob(12))) WHERE id=1; END""")
 
 
 def receive(name, offset, total, data):
@@ -87,7 +93,47 @@ def receive(name, offset, total, data):
     return {"offset": end, "received": end == total}
 
 
+WIDE = re.compile(r"[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef\U00020000-\U000323af]")
+NOTE_PAGE = 20
+
+
+def excerpt(body):
+    text = " ".join(unicodedata.normalize("NFC", body).split())
+    units = cut = 0
+    for end, char in enumerate(text):
+        units += 2 if WIDE.fullmatch(char) else 1
+        if units <= 88:
+            if units <= 87:
+                cut = end + 1
+            continue
+        while cut and cut < len(text) and (text[cut] in "。，、？！：；" or
+                (text[cut - 1].isascii() and text[cut - 1].isalnum() and
+                 text[cut].isascii() and text[cut].isalnum())):
+            cut -= 1
+        return text[:cut].rstrip() + "…"
+    return text
+
+
+def note_page(db, token, after):
+    current = db.execute("SELECT token FROM note_version WHERE id=1").fetchone()[0]
+    if token == current and after == 0:
+        return None
+    if current != token:
+        after = 0
+    records = db.execute("""SELECT n.id, r.recorded_at, n.body FROM notes n
+                            JOIN recordings r ON r.name=n.source
+                            WHERE n.id>? AND trim(n.body)<>'' ORDER BY n.id LIMIT ?""", (after, NOTE_PAGE + 1)).fetchall()
+    return {"version": current, "after": after, "more": len(records) > NOTE_PAGE,
+            "items": [[i, stamp or "", excerpt(body)] for i, stamp, body in records[:NOTE_PAGE]]}
+
+
 def sync(changes):
+    note_request = isinstance(changes, dict)
+    if note_request:
+        token, after = changes.get("notes_version"), changes.get("notes_after")
+        if not isinstance(token, str) or len(token) > 64 or type(after) is not int or not 0 <= after < 2**31:
+            raise ValueError("invalid note cursor")
+        changes = changes.get("edits")
     if not isinstance(changes, list):
         raise ValueError("expected an array of task changes")
     with database() as db:
@@ -100,7 +146,10 @@ def sync(changes):
         fields = "id,title,details,planned_at,due_at,done,promoted"
         tasks = [list(r) for r in db.execute("SELECT " + fields + " FROM tasks ORDER BY id")]
         pending = db.execute("SELECT count(*) FROM recordings WHERE state='queued'").fetchone()[0]
-    return {"tasks": tasks, "processing": pending}
+        result = {"tasks": tasks, "processing": pending}
+        if note_request:
+            result["notes"] = note_page(db, token, after)
+    return result
 
 
 def process(row):

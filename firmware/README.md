@@ -71,6 +71,8 @@ Provision HKUSTGZ once with the [USB campus login helper](../docs/campus-wifi.md
 
 ## Display and UI development
 
+The paired lock screen cycles through synced note excerpts on the card. NEXT or a horizontal swipe advances to another note. The text stays in the original spoken language. The timestamp follows the display-language setting.
+
 The panel is driven over SPI with DMA (`esp_lcd`) from two 40-line buffers, so LVGL draws the next strip while the previous one is sent. LVGL refreshes every 15 ms. Send `perf` over USB serial to read the measured frame rate and the slowest main-loop pass since the last `perf`.
 
 Check UI changes in the host simulator before flashing: it runs the real `src/main.cpp` with the real fonts and writes screenshots and animation frames. See [sim/README.md](sim/README.md).

@@ -37,6 +37,14 @@ A flash reset and a complete loss of board power are different test conditions. 
 
 All tests on a Windows PC unless noted.
 
+### 2026-11-22: paired lock-screen notes and strict extraction
+
+Four synthetic transcripts sent from the Pi to Beijing Bailian with strict JSON Schema passed the field checks and expected task/note counts for note-only, task-only, mixed and filler speech. An additional synthetic Mandarin WAV went through the deployed TLS service, Qwen ASR and DeepSeek Flash, producing one note and zero tasks.
+
+One application-only flash passed flash verification. COM5 reported HTTP 200, two existing tasks and one new note. The card snapshot included the expected Chinese excerpt and original recording time. After removing the owned synthetic recording from the Pi and syncing again, COM5 reported two tasks and zero notes. The active card snapshot was empty. All 24 pre-existing files matched their original SHA-256 hashes.
+
+The firmware simulator rendered Chinese content on an English lock screen, switched date language, handled an unknown timestamp and returned to the same frame after a rotation. The existing English tour and interaction screenshots matched their previous hashes. A native run of the cache code on the Pi with an isolated directory checked two-page publication, restoration in a new process and recovery from a damaged primary file.
+
 ### 2026-11-22: Chinese task titles in English and new-task feedback
 
 The host simulator rendered a Chinese task and a mixed Latin/Chinese title in English Today using the shipped 16 px face. The six body text sizes contained the same 3,767 code points. The sync notice scene showed a next-day task after unlocking, cleared it after three seconds, and showed a count for two arrivals during recording after Saved. The standard interaction and English tour screenshots matched their previous hashes.

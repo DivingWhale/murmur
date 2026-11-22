@@ -10,6 +10,8 @@
 #include "../src/card_usb.h"
 #include "../src/diagnostics.h"
 #include "../src/task_notice.h"
+#include "../src/pi_sync.h"
+#include "../src/lock_notes.h"
 #include <USB.h>
 #include <Preferences.h>
 #include <lvgl.h>
@@ -117,6 +119,10 @@ void printMicLevels(Print &out) { out.println("mic-speech-sim"); }
 
 // ---------------------------------------------------------------- card, Wi-Fi
 namespace { bool online = true; }
+namespace { bool pairedNotes=false, notesChanged=false; std::vector<lockNotes::Note> simNotes; }
+const std::vector<lockNotes::Note>& lockNotes::all() { return simNotes; }
+bool piSync::paired() { return pairedNotes; }
+bool piSync::service(bool,bool) { bool changed=notesChanged; notesChanged=false; return changed; }
 void beginCardUsb(USBCDC &) {}
 void takeCardForRecording() {}
 bool tryTakeCardForLocalFiles() { return true; }
@@ -270,6 +276,14 @@ int main(int argc, char **argv) {
             std::getline(in >> std::ws, title);
             taskNotice::added(title, plan=="-"?"":plan, due=="-"?"":due);
         }
+        else if (cmd == "lock-note") {
+            lockNotes::Note note;
+            in >> note.id >> note.stamp;
+            std::getline(in >> std::ws, note.text);
+            if (note.stamp=="-") note.stamp.clear();
+            simNotes.push_back(note); pairedNotes=notesChanged=true;
+        }
+        else if (cmd == "clear-notes") { simNotes.clear(); pairedNotes=notesChanged=true; }
         else if (cmd == "online") { int v; in >> v; online = v; }
         else if (cmd == "card") { int v; in >> v; cardPresent = v; }
         else if (cmd == "battery") { in >> simBattery; }

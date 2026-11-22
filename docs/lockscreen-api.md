@@ -1,6 +1,14 @@
 # Lock Screen Notes — API Contract
 
-The handheld shows a lock screen that cycles through **Miscellaneous notes chosen on the computer**. This file defines the API between the three parts. The handheld side and a mock are already done; the computer side and the Pi endpoints still need to be built.
+The paired handheld cycles through all recorded miscellaneous notes by default. The Pi and handheld use their existing TLS sync connection. Computer-side selection and the prototype endpoints below describe a future integration.
+
+## Deployed Pi and handheld protocol
+
+The handheld sends `POST /v1/sync` with `edits`, `notes_version` and `notes_after`. An empty version requests the first page. The Pi returns `notes: null` for an unchanged complete snapshot. A changed snapshot returns an object with its opaque `version`, starting `after` ID, `more` flag and `items`. Each item is an array of stable note ID, original recording timestamp (empty when unknown), and a plain-text excerpt. Pages contain up to 20 items in ascending ID order. Subsequent requests use the version and last ID received. A version change during download restarts the snapshot at ID zero. Older handhelds can still send an array of task edits.
+
+The Pi keeps the full note and cuts display excerpts at 88 display units using the rules below. The handheld caches the complete snapshot and browses it newest ID first. A failed download keeps the previous cache. The screen rotates every six seconds and retains the visible ID across updates when possible.
+
+## Future computer selection and prototype API
 
 ```
 Computer (Obsidian vault)  --PUT /v1/lockscreen-->  Raspberry Pi  <--GET /v1/lockscreen--  Handheld
@@ -15,7 +23,7 @@ Computer (Obsidian vault)  --PUT /v1/lockscreen-->  Raspberry Pi  <--GET /v1/loc
 | Lock screen UI + prototype | `prototype/index.html` | Done. Loads notes from the mock below. |
 | Mock response | `prototype/api/v1/lockscreen.json` | Static file. The real `GET` must return this shape. |
 | Computer-side selection | — | **To build** |
-| Pi endpoints | — | **To build** |
+| Prototype GET and computer PUT | — | Proposed. The paired handheld uses `POST /v1/sync` above. |
 
 To point the prototype at a real Pi, change `API_BASE` in `prototype/index.html`.
 
@@ -79,7 +87,7 @@ Headers: `Authorization: Bearer <device token>`, `If-None-Match: <version it has
 
 ## Limits the Pi should enforce
 
-- At most **20 notes**. `interval_s` from 3 to 60, default 6.
+- The proposed computer-selected set holds at most **20 notes**. The deployed speech-note feed sends all notes, 20 per page. `interval_s` from 3 to 60, default 6.
 - `excerpt` must be ≤ 88 **display units** after stripping Markdown. If it's longer, either reject it or cut it and add "…". Pick one approach and document it.
 
 ### Chinese and mixed text
@@ -110,4 +118,4 @@ Other rules:
 - The lock screen shows the current time and date, one note's excerpt, and the exact date and time it was recorded. Notes have no title. It moves to the next note every `interval_s` seconds.
 - **Touches are ignored** on the lock screen, so the device does nothing in a pocket.
 - **OK** unlocks to Today. **NEXT** shows the next note. **PLUS** starts recording right away.
-- If no notes have been chosen, it shows a hint to pick some on the computer.
+- If the paired device has no notes, it shows the empty state.

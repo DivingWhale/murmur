@@ -2,6 +2,7 @@
 #include "pi_sync.h"
 #include "ui_kit.h"
 #include <Preferences.h>
+#include "lock_notes.h"
 
 namespace model {
 namespace {
@@ -82,7 +83,30 @@ bool moveToToday(int id) {
     return save(state | (1u<<(8+id))); }
 unsigned pending() { return piSync::paired()?piSync::pending():waiting; }
 void notePending() { if (piSync::paired()) { piSync::recordingSaved(); return; } ++waiting; store.putUShort("pending",waiting); }
-int noteCount() { return int(sizeof(notes)/sizeof(*notes)); }
-const char *note(int index) { return pick(notes[index]); }
-const char *noteTime(int index) { return pick(noteTimes[index]); }
+int noteCount() {
+    if (piSync::paired()) return lockNotes::all().size();
+    return int(sizeof(notes)/sizeof(*notes));
+}
+int noteId(int index) {
+    if (piSync::paired()) return lockNotes::all()[noteCount()-1-index].id;
+    return index+1;
+}
+const char *note(int index) {
+    if (piSync::paired()) return lockNotes::all()[noteCount()-1-index].text.c_str();
+    return pick(notes[index]);
+}
+const char *noteTime(int index) {
+    if (piSync::paired()) {
+        const auto &stamp=lockNotes::all()[noteCount()-1-index].stamp;
+        int month,day,hour,minute;
+        if (sscanf(stamp.c_str(),"%*4d-%2d-%2dT%2d:%2d",&month,&day,&hour,&minute)!=4 || month<1 || month>12)
+            return ui::tr("录音时间未知","Recording time unknown");
+        static const char *months[]={"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
+        static char formatted[48];
+        if (ui::en) snprintf(formatted,sizeof(formatted),"%d %s · %02d:%02d",day,months[month-1],hour,minute);
+        else snprintf(formatted,sizeof(formatted),"%d月%d日 %02d:%02d",month,day,hour,minute);
+        return formatted;
+    }
+    return pick(noteTimes[index]);
+}
 }

@@ -107,7 +107,7 @@ void settleShade(int to) {
 Preferences prefs;
 bool sleepAfter, dirty=true;
 bool powerHoldStarted=false;
-int focused=0, taskScrollY=0, ticket=0, note=0, battery=-1;
+int focused=0, taskScrollY=0, ticket=0, note=0, shownNoteId=0, battery=-1;
 bool isCharging, chargeSample;
 uint32_t chargeChangedAt;
 // The pager keeps one header per page alive while the user swipes.
@@ -325,17 +325,41 @@ void lockView() {
     refreshClock();
 
     int noteTop=top+headerHeight+10;
-    if (piSync::paired()) {
-        label(14,noteTop,212,tr("还没有选择笔记。","No notes chosen yet."),17,muted);
+    const int count=model::noteCount();
+    if (!count) {
+        note=shownNoteId=0;
+        label(14,noteTop,212,tr("还没有随记。","No notes yet."),17,muted);
         label(40,211,186,tr("OK/上滑 解锁 · + 录音","OK/↑ unlock · + record"),14,muted,LV_TEXT_ALIGN_RIGHT);
         return;
     }
-    auto *body=label(14,noteTop,212,model::note(note),en?17:18,ink,LV_TEXT_ALIGN_LEFT,LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_line_space(body,en?2:4,0);
+    if (note>=count || model::noteId(note)!=shownNoteId) {
+        note=0;
+        if (shownNoteId) for (int i=0;i<count;++i) if (model::noteId(i)==shownNoteId) {note=i;break;}
+    }
+    shownNoteId=model::noteId(note);
+    const char *text=model::note(note);
+    bool useHan=!en;
+    if (piSync::paired()) {
+        useHan=false;
+        uint32_t pos=0;
+        while (text[pos]) {
+            auto cp=_lv_txt_encoded_next(text,&pos);
+            if ((cp>=0x3400 && cp<=0x9fff) || (cp>=0xf900 && cp<=0xfaff) || cp>=0x20000) {useHan=true;break;}
+        }
+    }
+    auto *body=label(14,noteTop,212,text,useHan?18:17,ink,LV_TEXT_ALIGN_LEFT,LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_line_space(body,useHan?4:2,0);
     lv_obj_update_layout(body);
+    const int maxBody=204-noteTop-6-fontFor(14)->line_height;
+    if (lv_obj_get_height(body)>maxBody) {
+        const int lineHeight=fontFor(useHan?18:17)->line_height+(useHan?4:2);
+        lv_label_set_long_mode(body,LV_LABEL_LONG_DOT);
+        lv_obj_set_height(body,((maxBody+(useHan?4:2))/lineHeight)*lineHeight-(useHan?4:2));
+        lv_obj_update_layout(body);
+    }
     auto *stamp=label(14,noteTop+6+lv_obj_get_height(body),212,model::noteTime(note),14,muted);
     animateNote(body); animateNote(stamp);
-    dots(14,221,2,note);
+    if (count>1) dots(14,221,min(count,3),note%min(count,3));
     label(40,211,186,tr("OK/上滑 解锁 · + 录音","OK/↑ unlock · + record"),14,muted,LV_TEXT_ALIGN_RIGHT);
 }
 lv_obj_t *scrollTitle(int x,int y,int w,const char *s,bool scroll,bool done=false) {
@@ -828,8 +852,10 @@ void choose() {
 void browse(int step) {
     slideDirection=step;
     if (screen==Screen::Lock) {
-        if (piSync::paired()) { rotated=millis(); return; }
-        note=(note+step+model::noteCount())%model::noteCount();
+        int count=model::noteCount();
+        if (count<=1) { rotated=millis(); slideDirection=0; return; }
+        note=(note+step+count)%count;
+        shownNoteId=model::noteId(note);
     }
     else {
         const auto &ids=tasks(false); int n=ids.size();

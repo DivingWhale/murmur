@@ -25,6 +25,7 @@ unsigned pending();
 void notePending();
 
 int noteCount();
+int noteId(int index);
 const char *note(int index);
 const char *noteTime(int index);
 }

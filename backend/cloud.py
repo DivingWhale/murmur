@@ -20,6 +20,22 @@ PROMPT = """为 Murmur 整理口述，输出 JSON 对象 {"tasks":[],"notes":[]}
 notes 是字符串数组，保留随记、观察和感想的原话。有任务又有感想时两者都保留。
 只有噪声、无语义或空文本时两个数组都为空。不编造任务。"""
 
+TEXT = {"type": "string"}
+OPTIONAL_TEXT = {"type": ["string", "null"]}
+TASK_FIELDS = {"title": TEXT, "details": OPTIONAL_TEXT, "planned_at": OPTIONAL_TEXT, "due_at": OPTIONAL_TEXT}
+
+
+def fixed_object(fields):
+    return {"type": "object", "properties": fields, "required": list(fields), "additionalProperties": False}
+
+
+EXTRACTION_FORMAT = {"type": "json_schema", "json_schema": {
+    "name": "murmur_extract", "strict": True, "schema": fixed_object({
+        "tasks": {"type": "array", "items": fixed_object(TASK_FIELDS)},
+        "notes": {"type": "array", "items": TEXT},
+    }),
+}}
+
 
 def chat(model, messages, **options):
     body = json.dumps(dict(model=model, messages=messages, **options)).encode()
@@ -60,16 +76,22 @@ def extract(text, recorded_at):
         {"role": "system", "content": PROMPT},
         {"role": "user", "content": json.dumps({"recorded_at": recorded_at, "transcript": text},
                                                ensure_ascii=False)}],
-        temperature=0, enable_thinking=False, response_format={"type": "json_object"}))
+        temperature=0, enable_thinking=False, response_format=EXTRACTION_FORMAT))
+    if not isinstance(data, dict) or set(data) != {"tasks", "notes"}:
+        raise ValueError("unexpected extraction fields")
     tasks, notes = data["tasks"], data["notes"]
-    if not isinstance(tasks, list) or not isinstance(notes, list) or not all(isinstance(n, str) for n in notes):
+    if (not isinstance(tasks, list) or not isinstance(notes, list)
+            or not all(isinstance(n, str) and n.strip() and "\x00" not in n for n in notes)):
         raise ValueError("unexpected extraction schema")
     rows = []
     for t in tasks:
+        if (not isinstance(t, dict) or t.keys() != TASK_FIELDS.keys() or not isinstance(t["title"], str)
+                or any(v is not None and (not isinstance(v, str) or "\x00" in v) for v in t.values())):
+            raise ValueError("invalid task fields")
         title = t["title"].strip()
         details = (t.get("details") or "").strip()
         if not title:
             raise ValueError("missing task title")
         rows.append((title, details, clean_time(t.get("planned_at"), recorded_at),
                      clean_time(t.get("due_at"), recorded_at)))
-    return rows, notes
+    return rows, [n.strip() for n in notes]

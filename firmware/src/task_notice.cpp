@@ -5,7 +5,7 @@
 
 namespace taskNotice {
 namespace {
-unsigned count;
+unsigned count, noteCount;
 std::string firstTitle, firstDate;
 bool deadline;
 
@@ -35,9 +35,19 @@ void added(const std::string &title,const std::string &plan,const std::string &d
         firstDate=plan.empty()?due:plan;
     }
 }
+void notesAdded(unsigned n) { noteCount+=n; }
 bool take(std::string &text) {
-    if (!count) return false;
-    if (count>1) {
+    if (!count && !noteCount) return false;
+    if (noteCount) {
+        char summary[64];
+        if (ui::en) {
+            if (count) snprintf(summary,sizeof(summary),"+%u %s · +%u %s",count,count==1?"task":"tasks",
+                                noteCount,noteCount==1?"note":"notes");
+            else snprintf(summary,sizeof(summary),"+%u %s",noteCount,noteCount==1?"note":"notes");
+        } else if (count) snprintf(summary,sizeof(summary),"新增 %u 项任务 · %u 条随记",count,noteCount);
+        else snprintf(summary,sizeof(summary),"新增 %u 条随记",noteCount);
+        text=summary;
+    } else if (count>1) {
         char summary[48];
         snprintf(summary,sizeof(summary),ui::tr("新增 %u 项任务","+%u tasks"),count);
         text=summary;
@@ -46,7 +56,7 @@ bool take(std::string &text) {
         text+=firstDate.empty()?ui::tr("有空再做","When I have time"):dateLabel(firstDate);
         text+=" · "+firstTitle;
     }
-    count=0;
+    count=noteCount=0;
     return true;
 }
 }

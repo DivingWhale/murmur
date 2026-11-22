@@ -22,8 +22,8 @@ bool done(int i);
 bool change(int i,bool promote);
 #else
 inline void begin() {}
-inline bool paired() { return false; }
-inline bool service(bool,bool) { return false; }
+bool paired();
+bool service(bool,bool);
 inline bool keepRadio() { return false; }
 inline bool needsWake() { return false; }
 inline void request() {}

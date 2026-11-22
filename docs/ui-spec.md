@@ -69,7 +69,7 @@ Coordinates are from the screen's top-left corner. The prototype has an exact ex
 - **Note:** the excerpt of one lock-screen note, starting 10px below the header.
 - **Recording time** under the note: the exact time it was recorded, `15 Nov · 09:22` / `11月15日 09:22`. Use the wall-clock time from `recorded_at` as written; don't convert time zones. Notes have **no title**.
 - **Footer** (10px from the bottom): position dots on the left (only if there is more than one note) and the hint `OK/↑ unlock · + record` / `OK/上滑 解锁 · + 录音` on the right.
-- **No notes:** show `No notes chosen yet. Pick Miscellaneous notes on your computer.` / `还没有选择笔记。请在电脑上挑选随记。`
+- **No notes:** show `No notes yet.` / `还没有随记。` A recording with an unknown capture time shows `Recording time unknown` / `录音时间未知`.
 - **Rotation:** move to the next note every `interval_s` seconds (default 6).
 - **Touch:** only deliberate swipes count, and taps are ignored (pocket safety).
   - **Swipe left/right** of ≥ 24 px (≈ 2.8 mm) shows the next/previous note (slides in, 0.28 s) and restarts the rotation timer.
@@ -263,7 +263,7 @@ Applies to task titles and the bottom-line title.
 - **Recording is refused:**
   - when the battery is ≤ 3% and not charging (Battery too low screen);
   - when the microSD card is full, or a write fails (Card full screen).
-- **Paired device sync:** after Saved, the handheld uploads the WAV in the background, then sends task edits and fetches the current task list. A later session collects results if the Pi takes longer than the current Wi-Fi window. The lock screen shows its empty state until computer-selected notes are integrated.
+- **Paired device sync:** after Saved, the handheld uploads the WAV in the background, then sends task edits and fetches tasks and all lock-screen notes. A later session collects results if the Pi takes longer than the current Wi-Fi window. It keeps the current note across a refresh when its ID is still present. New notes appear in the Today sync feedback, with a combined count for mixed results.
 - **If sync fails:** offline, timed out or connection lost, keep the items pending, turn Wi-Fi off, and retry at the next wake or the end of the next recording.
 
 ## 9. Battery

@@ -1,4 +1,5 @@
 #include "pi_sync.h"
+#include "lock_notes.h"
 #include "task_notice.h"
 #include "campus_wifi.h"
 #include "card_usb.h"
@@ -144,6 +145,7 @@ bool scan() {
     if (!card.mounted) return false;
     if (!loaded) {
         if (!readCache()) return false;
+        lockNotes::restore();
         loaded=true;
     }
     DIR *dir=opendir("/sdcard/murmur");
@@ -238,7 +240,14 @@ bool apply(Job &j) {
         }
         rows.swap(next); rebuild();
     }
-    cloudPending=cJSON_GetNumberValue(cJSON_GetObjectItem(doc.get(),"processing"))>0;
+    auto page=cJSON_GetObjectItem(doc.get(),"notes");
+    if (!cJSON_IsNull(page)) {
+        if (!cJSON_IsObject(page)) return false;
+        Card card;
+        if (!card.mounted || (!SD_MMC.exists("/murmur") && !SD_MMC.mkdir("/murmur")) ||
+            !lockNotes::apply(page)) return false;
+    }
+    cloudPending=cJSON_GetNumberValue(cJSON_GetObjectItem(doc.get(),"processing"))>0 || lockNotes::cursor()!=0;
     status=cloudPending?Status::Processing:Status::Synced;
     finished=!cloudPending && !pending();
     nextAttempt=millis()+1500;
@@ -298,13 +307,15 @@ bool service(bool recording,bool pickerOpen) {
     if (!current.empty()) {
         if (!stage(*active)) {active.reset(); scanned=false; status=Status::Card; nextAttempt=now+5000; return true;}
     } else {
-        active->path="/v1/sync"; active->editsJson="[";
+        active->path="/v1/sync"; active->editsJson="{\"edits\":[";
         for (auto &r:rows) if(r.dirty) {
             if (!active->edits.empty()) active->editsJson+=",";
             char item[64]; snprintf(item,sizeof(item),"[%d,%d,%d]",r.id,r.done,r.promoted);
             active->editsJson+=item; active->edits.push_back({r.id,r.done,r.promoted});
         }
-        active->editsJson+="]";
+        char cursor[100];
+        snprintf(cursor,sizeof(cursor),"],\"notes_after\":%d,\"notes_version\":\"%s\"}",lockNotes::cursor(),lockNotes::version().c_str());
+        active->editsJson+=cursor;
     }
     status=Status::Working;
     if (xTaskCreate(network,"pi-sync",10240,active.get(),1,nullptr)!=pdPASS) {
@@ -344,8 +355,8 @@ bool change(int i,bool promote) {
 }
 void command(char *args,Print &out) {
     if (!strcmp(args,"status")) {
-        out.printf("sync paired=%u status=%u http=%d queued=%u tasks=%u processing=%u\n",
-                   paired(),unsigned(status),lastHttp,pending(),unsigned(rows.size()),cloudPending);
+        out.printf("sync paired=%u status=%u http=%d queued=%u tasks=%u processing=%u notes=%u\n",
+                   paired(),unsigned(status),lastHttp,pending(),unsigned(rows.size()),cloudPending,unsigned(lockNotes::all().size()));
     } else if (!strcmp(args,"now")) {request(); out.println("sync requested");}
     else if (!strncmp(args,"pair ",5) && !active) {
         Pair candidate{};

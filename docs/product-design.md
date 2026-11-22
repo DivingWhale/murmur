@@ -33,7 +33,7 @@ After authentication and DHCP the handheld sets its clock via SNTP. After a succ
 The Raspberry Pi sends the audio for transcription, then sends the transcript to an AI model to interpret the speaker's intent. The user can speak naturally and cover several things in one recording.
 
 - **Tasks.** Extract actionable items and keep the details needed to carry them out. "Print the report and ask about binding while I'm at the print shop" can be one errand with both details.
-- **Miscellaneous notes.** File observations, ideas, and reflections in this Obsidian category. If a recording also contains a task, keep the speaker's words in the note and extract the task separately. A shared recording ID can link the two.
+- **Miscellaneous notes.** Keep observations, ideas and reflections in the speaker's language. All notes sync to the handheld's lock screen by default. If a recording also contains a task, keep the speaker's words in the note and extract the task separately. A shared recording ID links both. The Pi keeps the full body for future Obsidian integration.
 - **Dates.** Interpret relative dates using the time of recording. If the user says "pick up the parcel tomorrow" on Monday and the device syncs on Wednesday, the task is dated Tuesday. The device timestamps recordings and synchronizes its clock when online. If the date cannot be established reliably, preserve the original phrase for review.
 
 ## The on-device task list

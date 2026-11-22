@@ -1,4 +1,5 @@
 import io
+import json
 import tempfile
 import unittest
 import wave
@@ -6,9 +7,47 @@ from pathlib import Path
 from unittest.mock import patch
 
 import server
+import cloud
 
 
 class VoiceSyncTest(unittest.TestCase):
+    def test_note_pages_and_cached_revision(self):
+        def fetch(version="", after=0):
+            return server.sync({"edits": [], "notes_version": version, "notes_after": after})["notes"]
+        with tempfile.TemporaryDirectory() as directory, patch.object(server, "DATA", Path(directory)):
+            server.initialize()
+            empty = fetch()
+            self.assertEqual(empty["items"], [])
+            self.assertIsNone(fetch(empty["version"]))
+            with server.database() as db:
+                db.execute("INSERT INTO recordings(name,size) VALUES('sample',0)")
+                db.executemany("INSERT INTO notes(source,body) VALUES('sample',?)", [("随记 " + str(i),) for i in range(24)])
+            first = fetch(empty["version"])
+            self.assertTrue(first["more"])
+            last = fetch(first["version"], first["items"][-1][0])
+            self.assertFalse(last["more"])
+            self.assertEqual([i for i, _, _ in first["items"] + last["items"]], list(range(1, 25)))
+            self.assertEqual(last["items"][-1][1], "")
+            with server.database() as db:
+                db.execute("DELETE FROM notes WHERE id=3")
+            restart = fetch(first["version"], 20)
+            self.assertEqual(restart["after"], 0)
+            self.assertNotEqual(restart["version"], first["version"])
+            self.assertNotIn("notes", server.sync([]))
+
+    def test_excerpt_and_model_contract(self):
+        self.assertEqual(server.excerpt("一" * 44), "一" * 44)
+        self.assertEqual(server.excerpt("一" * 43 + "，。再见"), "一" * 42 + "…")
+        self.assertEqual(server.excerpt("一" * 42 + " English"), "一" * 42 + "…")
+        self.assertEqual(server.excerpt("Cafe\u0301\n 有风。"), "Café 有风。")
+        with patch.object(cloud, "chat", return_value='{"tasks":[],"notes":[" 随记 "]}') as chat:
+            self.assertEqual(cloud.extract("随记",None), ([], ["随记"]))
+            self.assertTrue(chat.call_args.kwargs["response_format"]["json_schema"]["strict"])
+        for invalid in ({"tasks": [], "notes": [" "]}, {"tasks": [{"title": "买书"}], "notes": []},
+                        {"tasks": [], "notes": [], "extra": True}):
+            with patch.object(cloud, "chat", return_value=json.dumps(invalid)), self.assertRaises(ValueError):
+                cloud.extract("文字", None)
+
     def test_interrupted_upload_reply_loss_and_worker_retry(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(server, "DATA", Path(directory)):
             server.initialize()
