@@ -9,6 +9,7 @@
 #include "../src/campus_wifi.h"
 #include "../src/card_usb.h"
 #include "../src/diagnostics.h"
+#include "../src/task_notice.h"
 #include <USB.h>
 #include <Preferences.h>
 #include <lvgl.h>
@@ -263,6 +264,12 @@ int main(int argc, char **argv) {
         }
         else if (cmd == "film") { Film f; uint32_t total; in >> f.name >> total >> f.step; f.next = nowMs; f.until = nowMs + total; films.push_back(f); }
         else if (cmd == "serial") { std::string rest; std::getline(in, rest); rest.erase(0, rest.find_first_not_of(' ')); for (char c : rest) serialIn.push_back(c); serialIn.push_back('\n'); runFor(5); }
+        else if (cmd == "notice") {
+            std::string plan, due, title;
+            in >> plan >> due;
+            std::getline(in >> std::ws, title);
+            taskNotice::added(title, plan=="-"?"":plan, due=="-"?"":due);
+        }
         else if (cmd == "online") { int v; in >> v; online = v; }
         else if (cmd == "card") { int v; in >> v; cardPresent = v; }
         else if (cmd == "battery") { in >> simBattery; }

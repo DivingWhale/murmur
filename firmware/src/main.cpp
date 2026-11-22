@@ -10,6 +10,7 @@
 #include "icons.h"
 #include "ui_kit.h"
 #include "tasks.h"
+#include "task_notice.h"
 #include "pi_sync.h"
 #include <Preferences.h>
 #include <esp_task_wdt.h>
@@ -50,7 +51,8 @@ int brightness=16, savedBrightness=16, sleepOption=1, settingFocus=0, settingsY=
 const uint32_t idleLimits[]={30000,60000,300000,0};
 int64_t freeBytes=-1;
 uint32_t lastInput, toastStarted;
-bool offlineToast, settingsTouch;
+bool toastActive, settingsTouch;
+std::string taskToast;
 int slideDirection;
 Motion pageMotion=Motion::None;
 Screen renderedScreen=Screen::Lock;
@@ -146,7 +148,7 @@ void settlePage(int index) {
     lastInput=entered=interacted=rotated=millis();
     motionEnds=lastInput;
     if (toast) { lv_obj_del(toast); toast=nullptr; }
-    offlineToast=false;
+    toastActive=false;
     if (target==start) return;
     lv_anim_t a; lv_anim_init(&a);
     lv_anim_set_var(&a,pageTrack); lv_anim_set_exec_cb(&a,positionTrack);
@@ -159,7 +161,7 @@ void go(Screen target) {
     if (screen==Screen::Settings && settingsList) settingsY=lv_obj_get_scroll_y(settingsList);
     storeBrightness();
     settingsTouch=false;
-    offlineToast=false;
+    toastActive=false;
     if (toast) { lv_obj_del(toast); toast=nullptr; }
     pageMotion=Motion::None;
     draggingPages=false;
@@ -619,7 +621,7 @@ void changeLanguage() {
 void syncNow() {
     if (piSync::paired()) piSync::request();
     if (screen==Screen::Panel) go(panelFrom);
-    offlineToast=true; toastStarted=millis(); dirty=true;
+    taskToast.clear(); toastActive=true; toastStarted=millis(); dirty=true;
 }
 // A fully depowered unit may need a trusted date before PEAP authentication.
 int clockParts[5],clockField;
@@ -796,12 +798,14 @@ void render() {
     if (pageMotion==Motion::EdgeLeft || pageMotion==Motion::EdgeRight) bounce(pageLayer,pageMotion==Motion::EdgeLeft?-1:1);
     else if (pageMotion!=Motion::None) motionEnds=millis()+enter(shade?shade:pageLayer,pageMotion);
     pageMotion=Motion::None; slideDirection=0;
-    if (offlineToast) {
+    if (toastActive) {
         // Prototype toast: an ink pill 82 px above the bottom edge.
-        const char *text=piSync::paired()?piSync::statusText():(campusOnline()?tr("尚未同步","Never synced"):tr("离线","Offline"));
-        const int w=lv_txt_get_width(text,strlen(text),fontFor(14),0,LV_TEXT_FLAG_NONE)+24, h=fontFor(14)->line_height+10;
+        const char *text=taskToast.empty()?piSync::statusText():taskToast.c_str();
+        if (taskToast.empty() && !piSync::paired()) text=campusOnline()?tr("尚未同步","Never synced"):tr("离线","Offline");
+        const int w=min(224,int(lv_txt_get_width(text,strlen(text),fontFor(14),0,LV_TEXT_FLAG_NONE))+24);
+        const int h=fontFor(14)->line_height+10;
         toast=box((240-w)/2,240-82-h,w,h,ink,h/2);
-        label(0,5,w,text,14,bg,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,toast);
+        label(10,5,w-20,text,14,bg,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_DOT,toast);
         fade(toast,LV_OPA_TRANSP,160);
     }
 }
@@ -1031,7 +1035,7 @@ void releaseShade(bool open,Screen from) {
     panelFrom=from;
     screen=renderedScreen=Screen::Panel;
     lastInput=entered=interacted=rotated=millis();
-    offlineToast=false;
+    toastActive=false;
     if (toast) { lv_obj_del(toast); toast=nullptr; }
     settleShade(0);
 }
@@ -1160,15 +1164,18 @@ void updateView(uint32_t now) {
     bool idleScreen=screen==Screen::Lock || screen==Screen::Today || screen==Screen::MD ||
                     screen==Screen::Claude || screen==Screen::Panel || screen==Screen::Settings ||
                     screen==Screen::Brightness;
-    if (idleScreen && idleLimits[sleepOption] && now-lastInput>=idleLimits[sleepOption]) go(Screen::Sleep);
-    if (offlineToast && now-toastStarted>=3000) {
-        offlineToast=false;
+    if (idleScreen && !toastActive && idleLimits[sleepOption] && now-lastInput>=idleLimits[sleepOption]) go(Screen::Sleep);
+    if (toastActive && now-toastStarted>=3000) {
+        toastActive=false;
         if (toast) { lv_obj_del(toast); toast=nullptr; }
     }
     if (screen==Screen::Saved && now-entered>=2000) go(sleepAfter?Screen::Sleep:Screen::Today);
     if (screen==Screen::Lock && now-rotated>=6000 && !overlay) browse(1);
     if (screen==Screen::Picker && now-interacted>=8000 && !overlay) go(Screen::Today);
     if (screen==Screen::Today && !overlay) {
+        if (!draggingPages && !shade && int32_t(now-motionEnds)>=0 && taskNotice::take(taskToast)) {
+            toastActive=true; toastStarted=now; dirty=true;
+        }
         if (focused==n && now-interacted>=10000) { focused=0; rotated=now; dirty=true; }
         else if (!dirty && focused!=n && now-rotated>=scrollPeriod) {
             const auto &later=tasks(false); int count=later.size();

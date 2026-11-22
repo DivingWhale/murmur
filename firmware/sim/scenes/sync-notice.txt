@@ -1,0 +1,18 @@
+# A result received on the lock screen is still visible after unlocking.
+serial en
+wait 600
+notice 2026-11-19T09:00+08:00 - 还书
+wait 4000
+press ok
+wait 700
+shot future-task-en
+wait 3100
+shot after-notice
+# Two arrivals during recording are summarized together after Saved.
+press plus
+notice - - 整理 USB 线
+notice - - 取快递
+wait 3500
+press plus
+wait 2400
+shot two-tasks-en

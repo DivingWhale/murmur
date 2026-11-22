@@ -94,7 +94,7 @@ Coordinates are from the screen's top-left corner. The prototype has an exact ex
   - **Label row:** `WHEN I HAVE TIME` / `有空再做` with position dots. When highlighted, the label changes to `PAUSED · OK TO CHOOSE` / `已暂停 · 按 OK 选择` in focus colour.
   - **Title row:** the task title, then a due chip (`Due Fri`) if the task has a deadline.
   - **Rotation:** show the next task every 3 s. If the title scrolls (§6), wait until one full loop has finished before rotating. Rotation pauses while the line is highlighted.
-- **Toast:** after a sync, a pill 82px from the bottom shows the result, for example `+1 task`, `+1 note · +1 task`, `+1 task for tomorrow` or `Synced`. It stays for 3 s.
+- **Toast:** when a sync adds a task, Today shows its schedule and original title for 3 s, for example `Tomorrow 09:00 · 还书`. An unscheduled task shows its deadline or `When I have time`. Several new tasks show a count. Results received during recording or sleep wait until Today is visible. The pill sits 82px from the bottom.
 
 ### 4.3 "Move to Today?" picker (full screen)
 - **Contents, from top to bottom:**
@@ -284,7 +284,7 @@ Campus Wi-Fi (WPA2-Enterprise, PEAP) is covered separately in `docs/campus-wifi.
 1. **Buttons:** which GPIOs PLUS, NEXT and OK use, and whether all three can wake the ESP32-S3 from deep sleep. If they can't, use light sleep instead.
 2. **Charging:** whether the board reports charging status, which the lightning bolt needs.
 3. **Battery voltage:** whether the board can read it through an ADC divider.
-4. **Fonts:** whether the font subset at five sizes fits in flash alongside the firmware and OTA partitions. If it doesn't, drop the 13px and 20px Chinese sizes.
+4. **Fonts:** the shipped image fits the Chinese subset at all six text sizes within the 7 MiB application slot.
 
 ## 12. Acceptance checks
 

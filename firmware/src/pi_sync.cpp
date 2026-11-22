@@ -1,4 +1,5 @@
 #include "pi_sync.h"
+#include "task_notice.h"
 #include "campus_wifi.h"
 #include "card_usb.h"
 #include "ui_kit.h"
@@ -227,8 +228,16 @@ bool apply(Job &j) {
             r.done=old.done; r.promoted=old.promoted; r.dirty=true;
         }
     }
-    if (next!=rows && !save(next)) return false;
-    rows.swap(next); rebuild();
+    if (next!=rows) {
+        if (!save(next)) return false;
+        // Both the card cache and the Pi snapshot are in ascending task ID order.
+        auto old=rows.begin();
+        for (const auto &r:next) {
+            while (old!=rows.end() && old->id<r.id) ++old;
+            if (old==rows.end() || old->id!=r.id) taskNotice::added(r.title,r.plan,r.due);
+        }
+        rows.swap(next); rebuild();
+    }
     cloudPending=cJSON_GetNumberValue(cJSON_GetObjectItem(doc.get(),"processing"))>0;
     status=cloudPending?Status::Processing:Status::Synced;
     finished=!cloudPending && !pending();

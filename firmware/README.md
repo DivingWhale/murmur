@@ -88,7 +88,7 @@ Icons are the prototype's SVG strokes, rasterized into `src/icons_data.cpp` by `
 |---|---|
 | `src/main.cpp` | Screens, navigation, keys and touch |
 | `src/ui_kit.*` | Palette, drawing primitives and motion (prototype timings) |
-| `src/tasks.*` | Task list and lock-screen notes. Sample data for now; the Pi sync replaces it here |
+| `src/tasks.*`, `src/pi_sync.*` | Task lists, card cache, recording uploads and Pi sync. Unpaired devices show sample data. |
 | `src/icons.*`, `src/icons_data.cpp` | Generated stroke icons |
 | `src/board.*` | Display, backlight, touch, buttons, battery |
 | `src/audio.*` | Microphone capture task and WAV writer |
@@ -97,7 +97,6 @@ Icons are the prototype's SVG strokes, rasterized into `src/icons_data.cpp` by `
 
 ## Known limitations
 
-- **Pi sync is not implemented.** Sync now shows a toast, the header counts local changes as waiting, and the Claude page shows its empty state.
 - **Sleep is shallow.** It turns off the backlight and runs the CPU at 80 MHz instead of 240 MHz, and Wi-Fi sessions end by themselves. True light sleep would disconnect USB on every sleep and needs testing on hardware first.
 - **Arduino-ESP32 2.0.17 (ESP-IDF 4.4).** Its SDK has no public setter for the RADIUS server name, so `tools/campus_tls.py` renames a symbol in the prebuilt supplicant and `-Wl,--wrap=eap_sm_allowMethod` restricts the outer method to PEAP. Moving to Arduino-ESP32 3.x (ESP-IDF 5) would replace both with `esp_eap_client_set_domain_name()`. It also changes the I2S, TinyUSB and Wi-Fi APIs this firmware uses. That move needs a hardware session to verify USB mounting and campus login, so it has not been made blind. The build fails loudly (`Supplicant TLS setup hook missing`) if the patch stops applying.
 
@@ -117,7 +116,7 @@ Diagnostics include stages and result codes for Wi-Fi, USB and card readiness, s
 
 ## Fonts
 
-The firmware reads the 4-bit antialiased glyphs directly from flash. The Chinese faces at 13, 14, 17, 18 and 20 px include all 3,500 level-one characters from the 2013 Table of General Standard Chinese Characters. The pack also includes punctuation, prototype text, Inter for Latin and JetBrains Mono for the recording timer. It occupies 2,714,917 bytes including metrics and indexes. Each application slot is 7 MiB. The UI and its card errors work without a font file on the card.
+The firmware reads the 4-bit antialiased glyphs directly from flash. The text faces at 13, 14, 16, 17, 18 and 20 px include all 3,500 level-one characters from the 2013 Table of General Standard Chinese Characters. Both UI languages use these faces for task content. The pack also includes punctuation, prototype text, Inter for Latin and JetBrains Mono for the recording timer. It occupies 3,215,133 bytes including metrics and indexes. Each application slot is 7 MiB. The UI and its card errors work without a font file on the card.
 
 To regenerate `assets/fonts.bin`, use Pillow 13.0.0 and fontTools 4.68.0 in the project virtual environment. Put the following inputs under `work/fonts/` and run `work/venv/Scripts/python firmware/tools/pack_fonts.py work/fonts` from the repository root.
 

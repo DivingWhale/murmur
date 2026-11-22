@@ -37,6 +37,12 @@ A flash reset and a complete loss of board power are different test conditions. 
 
 All tests on a Windows PC unless noted.
 
+### 2026-11-22: Chinese task titles in English and new-task feedback
+
+The host simulator rendered a Chinese task and a mixed Latin/Chinese title in English Today using the shipped 16 px face. The six body text sizes contained the same 3,767 code points. The sync notice scene showed a next-day task after unlocking, cleared it after three seconds, and showed a count for two arrivals during recording after Saved. The standard interaction and English tour screenshots matched their previous hashes.
+
+One application-only flash passed the device hash check. COM5 reported a paired HTTP 200 sync, two tasks and an empty queue. The card cache retained the current-day and next-day tasks with their original Chinese titles and local times. All 24 existing card files, including 20 WAVs, matched their pre-flash SHA-256 hashes. Visual checks used simulator frames.
+
 ### 2026-11-22: Pi voice sync
 
 One application-only flash preserved the saved campus login. COM5 answered the sync, Wi-Fi, clock and performance commands. After USB pairing, the board reached the Pi over campus Wi-Fi, completed a TLS sync with HTTP 200 and turned the radio off. All 20 pre-existing card files matched their SHA-256 hashes, including 18 WAVs. The simulator interaction contact sheet matched the previous shade-fixed baseline.
