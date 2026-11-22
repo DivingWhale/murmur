@@ -104,6 +104,8 @@ def sync(changes):
 
 
 def process(row):
+    if row["state"] != "queued":
+        return
     name = row["name"]
     text = row["transcript"]
     if text is None:
@@ -122,7 +124,7 @@ def process(row):
                     segment = old[0] if old else cloud.transcribe(pcm)
                     if not old:
                         with database() as db:
-                            db.execute("INSERT INTO segments VALUES(?,?,?)", (name,index,segment))
+                            db.execute("INSERT OR IGNORE INTO segments VALUES(?,?,?)", (name,index,segment))
                     parts.append(segment)
         text = "\n".join(parts)
         with database() as db:
@@ -130,10 +132,13 @@ def process(row):
     tasks, notes = cloud.extract(text, row["recorded_at"])
     with database() as db:
         # Publish tasks, notes and completion together, even across a power loss.
+        claimed = db.execute("UPDATE recordings SET state='ready',error=NULL WHERE name=? AND state='queued'",
+                             (name,))
+        if not claimed.rowcount:
+            return
         db.executemany("INSERT INTO tasks(source,title,details,planned_at,due_at) VALUES(?,?,?,?,?)",
                        [(name, *task) for task in tasks])
         db.executemany("INSERT INTO notes(source,body) VALUES(?,?)", [(name,n) for n in notes])
-        db.execute("UPDATE recordings SET state='ready',error=NULL WHERE name=?", (name,))
 
 
 def worker():

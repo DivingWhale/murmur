@@ -43,6 +43,10 @@ One application-only flash preserved the saved campus login. COM5 answered the s
 
 A separate database on the Pi received a synthetic WAV in two chunks, including a repeated chunk. The installed service called both cloud models, returned one task naming Obsidian for 09:00 two days after capture, and accepted a repeated completion update. The fixture stayed out of the live task list.
 
+A second, future-dated fixture exercised the production service and actual handheld download. The card cache contained the expected title and planned time. Removing only the test recording and its results, then syncing, restored the empty live task cache. Both cloud fixtures used synthetic PCM.
+
+Two wired sessions with Windows drive access around sync recorded a task-watchdog reset after the radio went off. Both retained phase 8 and Wi-Fi step 0; the last recorded event was USB configuration. A pre-update diagnostic log contains the same reset and phase. These logs do not establish a cause. With no host drive queries during the next three consecutive sync cycles, the handheld returned HTTP 200, turned off Wi-Fi and retained the same boot ID each time.
+
 ### 2026-11-21: USB baseline
 
 On the USB-powered test unit, four consecutive flashes brought back COM5 and drive F automatically. Windows mounted the volume about 22 seconds after COM5 appeared. The final three runs passed the 45-second check and all 11 existing WAVs were readable.

@@ -32,7 +32,9 @@ class VoiceSyncTest(unittest.TestCase):
                 with patch.object(server.cloud, "extract", side_effect=TimeoutError), self.assertRaises(TimeoutError):
                     server.process(record())
                 with patch.object(server.cloud, "extract", return_value=([("还书", "", "2026-11-24", None)], ["原文"])):
-                    server.process(record())
+                    queued = record()
+                    server.process(queued)
+                    server.process(queued)
                 asr.assert_called_once()
             self.assertEqual(record()["state"], "ready")
             task, = server.sync([])["tasks"]
