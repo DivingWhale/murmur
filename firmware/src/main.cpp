@@ -58,11 +58,9 @@ lv_obj_t *settingsList, *settingRows[SettingCount], *brightnessFill, *brightPerc
 constexpr int pageWidth=240;
 constexpr Screen pages[]={Screen::Today,Screen::Claude,Screen::MD};
 lv_obj_t *pageTrack;
-// The quick panel behaves as a pull-down shade (§4.11). While it is pulled over a page it lives in
-// its own layer (`shade`) above that page. `panelLift` is how far the open panel has been dragged up.
+// Keep the page alive under the quick panel so moving the shade reveals it immediately.
 lv_obj_t *shade;
-bool shadeDragging, panelDragging;
-int panelLift;
+bool shadeDragging, panelDragging, shadeAnimating;
 bool draggingPages=false;
 int pageIndex(Screen value) {
     for (int i=0;i<3;++i) if (pages[i]==value) return i;
@@ -71,17 +69,36 @@ int pageIndex(Screen value) {
 void positionTrack(void *track,int32_t x) {
     lv_obj_set_x(static_cast<lv_obj_t*>(track),x);
 }
-// Moves a layer vertically with ease-out, up to 0.28 s for a full screen. Optionally deletes it after.
-int slideY(lv_obj_t *obj,int from,int to,bool deleteAfter) {
+void moveShade(void *obj,int32_t y) {
+    lv_obj_set_style_translate_y(static_cast<lv_obj_t*>(obj),y,0);
+}
+void removeShade() {
+    if (shade) {
+        lv_obj_del(shade);
+        shade=nullptr;
+        brightnessFill=brightPercent=filledPercent=nullptr;
+    }
+    shadeDragging=panelDragging=shadeAnimating=false;
+}
+void settleShade(int to) {
+    const int from=lv_obj_get_style_translate_y(shade,0);
+    lv_anim_del(shade,moveShade);
+    shadeAnimating=from!=to;
+    if (!shadeAnimating) {
+        if (to==-240) removeShade();
+        return;
+    }
     const int ms=constrain(abs(to-from)*280/240,120,280);
     lv_anim_t a; lv_anim_init(&a);
-    lv_anim_set_var(&a,obj);
-    lv_anim_set_exec_cb(&a,[](void *o,int32_t v){lv_obj_set_style_translate_y(static_cast<lv_obj_t*>(o),v,0);});
+    lv_anim_set_var(&a,shade);
+    lv_anim_set_exec_cb(&a,moveShade);
     lv_anim_set_values(&a,from,to); lv_anim_set_time(&a,ms);
     lv_anim_set_path_cb(&a,lv_anim_path_ease_out);
-    if (deleteAfter) lv_anim_set_ready_cb(&a,[](lv_anim_t *done){lv_obj_del(static_cast<lv_obj_t*>(done->var));});
+    lv_anim_set_ready_cb(&a,[](lv_anim_t *done){
+        shadeAnimating=false;
+        if (done->end_value==-240) removeShade();
+    });
     lv_anim_start(&a);
-    return ms;
 }
 Preferences prefs;
 bool sleepAfter, dirty=true;
@@ -116,6 +133,8 @@ struct Item { const char *zh, *english; }; // A label in both languages.
 // Screens list Today's unfinished tasks, or the finished ones when the header count is tapped.
 int tasks(bool today,int *ids) { return today?model::today(ids,showCompleted):model::later(ids); }
 void storeBrightness();
+lv_obj_t *buildShade();
+void releaseShade(bool open,Screen from);
 void settlePage(int index) {
     draggingPages=false;
     int target=-index*pageWidth;
@@ -135,20 +154,35 @@ void settlePage(int index) {
     motionEnds+=duration;
 }
 void go(Screen target) {
-    if (shade) { lv_obj_del(shade); shade=nullptr; shadeDragging=false; }
     if (screen==Screen::Settings && settingsList) settingsY=lv_obj_get_scroll_y(settingsList);
     storeBrightness();
     settingsTouch=false;
     offlineToast=false;
+    if (toast) { lv_obj_del(toast); toast=nullptr; }
     pageMotion=Motion::None;
     draggingPages=false;
-    if (pageTrack && screen==renderedScreen && pageIndex(target)>=0 && target!=screen) {
+    if (overlay) { lv_obj_del(overlay); overlay=progressFill=nullptr; }
+    if (screen==Screen::Panel && target==panelFrom && shade && pageTrack) {
+        screen=renderedScreen=target;
+        lastInput=entered=interacted=rotated=millis();
+        panelDragging=false;
+        settleShade(-240);
+        return;
+    }
+    removeShade();
+    if (target==Screen::Panel && pageTrack && pageIndex(screen)>=0 && screen==renderedScreen) {
+        shade=buildShade();
+        moveShade(shade,-240);
+        releaseShade(true,screen);
+        return;
+    }
+    if (pageTrack && pageIndex(screen)>=0 && screen==renderedScreen && pageIndex(target)>=0 && target!=screen) {
         settlePage(pageIndex(target));
         return;
     }
     const bool waking=screen==Screen::Sleep && target!=Screen::Sleep && target!=Screen::Recording;
-    if (target==Screen::Panel) pageMotion=screen==Screen::Settings?Motion::Right:Motion::Down;
-    else if (screen==Screen::Panel) pageMotion=target==Screen::Settings?Motion::Left:Motion::Up;
+    if (target==Screen::Panel && screen==Screen::Settings) pageMotion=Motion::Right;
+    else if (screen==Screen::Panel && target==Screen::Settings) pageMotion=Motion::Left;
     else if (screen==Screen::Lock && target==Screen::Today) pageMotion=Motion::Up;
     else if (screen==Screen::Settings && (target==Screen::Brightness || target==Screen::SetClock)) pageMotion=Motion::Left;
     else if ((screen==Screen::Brightness || screen==Screen::SetClock) && target==Screen::Settings) pageMotion=Motion::Right;
@@ -596,8 +630,8 @@ void activateSetting(int i) {
         break;
     }
 }
-void pagesView() {
-    pageTrack=box(-pageIndex(screen)*pageWidth,0,3*pageWidth,240,bg);
+void pagesView(Screen page) {
+    pageTrack=box(-pageIndex(page)*pageWidth,0,3*pageWidth,240,bg);
     for (int i=0;i<3;++i) {
         panelRoot=box(i*pageWidth,0,pageWidth,240,bg,0,0,0,pageTrack);
         if (pages[i]==Screen::Today) todayView();
@@ -620,21 +654,13 @@ void render() {
     if (screen==Screen::Settings && settingsList) settingsY=lv_obj_get_scroll_y(settingsList);
     if (taskList) taskScrollY=lv_obj_get_scroll_y(taskList);
     taskList=nullptr;
-    lv_obj_t *previousLayer=pageLayer;
     pageLayer=pageTrack=nullptr;
     batteryIconCount=0;
     batterySetting=nullptr;
     draggingPages=false;
-    // The panel opens by sliding down over the previous screen and closes by sliding up off the next.
-    const bool openingPanel=screen==Screen::Panel && pageMotion==Motion::Down;
-    const bool closingPanel=renderedScreen==Screen::Panel && pageMotion==Motion::Up && pageIndex(screen)>=0;
-    lv_obj_t *outgoing=openingPanel || closingPanel?previousLayer:nullptr;
-    shade=nullptr; shadeDragging=panelDragging=false;
     auto *root=lv_scr_act();
-    for(int i=int(lv_obj_get_child_cnt(root))-1;i>=0;--i) {
-        auto *child=lv_obj_get_child(root,i);
-        if (child!=outgoing) lv_obj_del(child);
-    }
+    removeShade();
+    lv_obj_clean(root);
     pageLayer=box(0,0,240,240,bg);
     renderedScreen=screen;
     toast=settingsList=brightnessFill=nullptr;
@@ -644,9 +670,12 @@ void render() {
     lastSeconds=UINT32_MAX; lastLevel=255;
     switch(screen) {
     case Screen::Lock: lockView(); break;
-    case Screen::Today: case Screen::Claude: case Screen::MD: pagesView(); break;
+    case Screen::Today: case Screen::Claude: case Screen::MD: pagesView(screen); break;
     case Screen::Picker: pickerView(); break;
-    case Screen::Panel: panelView(); break;
+    case Screen::Panel:
+        pagesView(panelFrom);
+        shade=buildShade();
+        break;
     case Screen::Settings: settingsView(); break;
     case Screen::SetClock: clockEditorView(); break;
     case Screen::Brightness:
@@ -713,16 +742,8 @@ void render() {
     case Screen::UnplugPower: center(100,tr("拔下 USB 后关机","Unplug USB to power off"),18); break;
     }
     refreshBatteryWidgets();
-    if (closingPanel && outgoing) {
-        lv_obj_move_foreground(outgoing);
-        motionEnds=millis()+slideY(outgoing,panelLift,-240,true);
-    } else if (openingPanel && outgoing) {
-        const int ms=slideY(pageLayer,-240,0,false);
-        lv_obj_del_delayed(outgoing,ms);
-        motionEnds=millis()+ms;
-    } else if (pageMotion==Motion::EdgeLeft || pageMotion==Motion::EdgeRight) bounce(pageLayer,pageMotion==Motion::EdgeLeft?-1:1);
-    else if (pageMotion!=Motion::None) motionEnds=millis()+enter(pageLayer,pageMotion);
-    panelLift=0;
+    if (pageMotion==Motion::EdgeLeft || pageMotion==Motion::EdgeRight) bounce(pageLayer,pageMotion==Motion::EdgeLeft?-1:1);
+    else if (pageMotion!=Motion::None) motionEnds=millis()+enter(shade?shade:pageLayer,pageMotion);
     pageMotion=Motion::None; slideDirection=0;
     if (offlineToast) {
         // Prototype toast: an ink pill 82 px above the bottom edge.
@@ -814,7 +835,7 @@ bool holdTarget(int pin,Screen &target) {
 }
 void holdOverlay(Screen target,int percent) {
     if (!overlay) {
-        overlay=box(0,0,240,240,0);
+        overlay=box(0,0,240,240,0,0,0,0,screen==Screen::Panel?shade:pageLayer);
         lv_obj_set_style_bg_opa(overlay,185,0);
         const char *s=tr("返回","Back");
         Icon glyph=Icon::Back;
@@ -943,21 +964,19 @@ lv_obj_t *buildShade() {
     return layer;
 }
 // The shade's bottom edge follows the finger.
-void pullShade(int fingerY) { lv_obj_set_style_translate_y(shade,min(0,fingerY-240),0); }
+void pullShade(int fingerY) { moveShade(shade,min(0,fingerY-240)); }
 void releaseShade(bool open,Screen from) {
     shadeDragging=false;
-    const int at=lv_obj_get_style_translate_y(shade,0);
     if (!open) {
-        motionEnds=millis()+slideY(shade,at,-240,true);
-        shade=nullptr;
+        settleShade(-240);
         return;
     }
-    motionEnds=millis()+slideY(shade,at,0,false);
     panelFrom=from;
-    screen=Screen::Panel; // Rendered in place once the shade has settled.
+    screen=renderedScreen=Screen::Panel;
     lastInput=entered=interacted=rotated=millis();
     offlineToast=false;
-    dirty=true;
+    if (toast) { lv_obj_del(toast); toast=nullptr; }
+    settleShade(0);
 }
 void setBrightnessFromTouch(int x) {
     const Rect &bar=screen==Screen::Panel?layout::panelBrightness:layout::screenBrightness;
@@ -971,7 +990,7 @@ void pollTouch(uint32_t now) {
     static bool pageTouch,verticalDrag;
     static int trackStart;
     static Screen from;
-    if (screen==Screen::Sleep || overlay || (shade && !shadeDragging)) {
+    if (screen==Screen::Sleep || overlay || shadeAnimating || (screen==Screen::Panel && !shade)) {
         if (draggingPages && pageTrack) settlePage(pageIndex(screen));
         tracking=settingsTouch=false; return;
     }
@@ -983,7 +1002,7 @@ void pollTouch(uint32_t now) {
         if (!tracking) {
             startX=tx; startY=ty; tracking=true; from=screen;
             listTouch=screen==Screen::Today && layout::taskList.contains(tx,ty);
-            pageTouch=pageTrack && from==renderedScreen && (from!=Screen::Today || ty<layout::strip);
+            pageTouch=pageTrack && pageIndex(from)>=0 && from==renderedScreen && (from!=Screen::Today || ty<layout::strip);
             verticalDrag=false;
             if (pageTouch) {
                 trackStart=lv_obj_get_style_x(pageTrack,0);
@@ -1001,10 +1020,11 @@ void pollTouch(uint32_t now) {
         settingsPoint={lv_coord_t(x),lv_coord_t(y)};
         int dx=x-startX, dy=y-startY;
         if (shadeDragging) { pullShade(y); return; }
-        if (panelDragging) { lv_obj_set_style_translate_y(pageLayer,min(0,dy),0); return; }
+        if (panelDragging) { moveShade(shade,min(0,dy)); return; }
         if (screen==Screen::Panel && from==screen && !sliderMoved && dy<=-8 && -dy>abs(dx)) {
             panelDragging=true;
             settingsTouch=false;
+            moveShade(shade,dy);
             return;
         }
         if (pageTouch && pageTrack && from==screen && !verticalDrag) {
@@ -1044,9 +1064,8 @@ void pollTouch(uint32_t now) {
             panelDragging=false;
             if (released && startY-y>=30) {
                 setBrightnessLevel(sliderStart);
-                panelLift=lv_obj_get_style_translate_y(pageLayer,0);
                 go(panelFrom);
-            } else motionEnds=millis()+slideY(pageLayer,lv_obj_get_style_translate_y(pageLayer,0),0,false);
+            } else settleShade(0);
             return;
         }
         if (from!=screen) return;
@@ -1101,8 +1120,8 @@ void updateView(uint32_t now) {
         }
     }
     const bool settling=int32_t(now-motionEnds)<0;
-    // A shade that has been released open finishes sliding before the panel is rebuilt in place.
-    if (dirty && !(shade && settling) && (renderedScreen!=screen || (!draggingPages && !settling))) render();
+    if (dirty && !shadeAnimating && !shadeDragging && !panelDragging &&
+        (renderedScreen!=screen || (!draggingPages && !settling))) render();
     if (recordingActive()) {
         unsigned s=recordedSeconds();
         if (lastSeconds!=s) {
