@@ -1,0 +1,70 @@
+# Every screen, in English then Chinese, as two contact sheets (tour-en, tour-zh).
+serial en
+sheet tour-en
+wait 600
+snap
+press ok
+wait 500
+snap
+press next
+press ok
+wait 300
+snap
+press next
+press next
+wait 300
+snap
+swipe 180 100 40 100 120
+wait 400
+snap
+swipe 180 100 40 100 120
+wait 400
+snap
+swipe 120 6 120 120 100
+wait 400
+snap
+tap 60 70
+wait 200
+snap
+wait 3000
+swipe 120 6 120 120 100
+wait 400
+tap 120 200
+wait 400
+snap
+tap 120 210
+wait 400
+snap
+hold ok 900
+wait 300
+press plus
+wait 3200
+snap
+press next
+wait 300
+snap
+press ok
+wait 300
+press plus
+wait 300
+snap
+wait 2500
+down ok
+wait 600
+snap
+up ok
+wait 400
+down next
+wait 600
+snap
+up next
+wait 400
+press next
+wait 300
+card 0
+press plus
+wait 300
+snap
+press ok
+card 1
+wait 300

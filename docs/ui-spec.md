@@ -84,6 +84,7 @@ Coordinates are from the screen's top-left corner. The prototype has an exact ex
   - All synced: a check icon in muted colour.
   - Waiting, online: a sync icon and a count, in sync colour.
   - Waiting, offline: a Wi-Fi-off icon and a count, in muted colour.
+  - The count is the number of local changes (task edits and saved recordings) not yet sent to the Pi. Until the Pi sync exists, nothing clears it.
 - **Task list:** **2 rows visible** (60px each, 3px gap). The window scrolls so the highlighted row is always visible.
 - **Vertical drag:** the list follows the finger continuously and can rest partway through a row. The firmware scroll container supports momentum. The header and bottom line stay pinned. A drag consumes the tap even at either end.
 - **Task row:** a 20px circle checkbox, then the title, then a meta line underneath. The meta line can contain `Carried over`, a detail such as `Print shop`, and a deadline in due colour (`Due Fri`, `Due today` or `Overdue`), joined with ` · `.
@@ -107,7 +108,7 @@ Coordinates are from the screen's top-left corner. The prototype has an exact ex
 
 ### 4.4 Recording
 - **Top row:** a red dot that blinks once a second, `REC` / `录音中` on the left, and the date on the right. Below 20% battery (when not charging), the battery indicator replaces the date.
-- **Middle:** the timer `m:ss`, with a live level meter of 20 bars underneath.
+- **Middle:** the timer `m:ss`, with a waveform of 20 bars underneath: 5px wide, 3px apart, rec colour, centred on one line. Every 70 ms the bars shift left and the newest input level enters on the right as a 5–35px bar.
 - **Bottom:** two 108 × 64 px touch buttons. The left button reads `Cancel` / `取消` with the NEXT hint. The right button reads `Stop & save` / `结束并保存` with the PLUS hint.
 - **Discard confirmation:** a tap on Cancel or a short NEXT press opens “Discard this recording?” while capture and the elapsed timer continue. Keep recording is initially selected. NEXT toggles the selection and OK activates it. Touch either choice directly. Put Keep recording on the left so a repeated tap on Cancel keeps the audio. PLUS still finalizes and saves. Confirming Discard removes only the active temporary file, skips the Saved screen and returns to the originating screen, including Sleep.
 
@@ -125,6 +126,7 @@ At the bottom: `Press + to record anytime` / `随时按 + 录音`.
 ### 4.7 Errors
 - **Card full or write failed:** a warning triangle in rec colour, `Card full` / `存储卡已满`, then `This recording wasn't saved. Free up space on the microSD card.` At the bottom: `OK to dismiss` / `按 OK 关闭`.
 - **Battery too low:** a large battery icon, `Battery too low` / `电量过低`, then `Charge the device to record. Recording now could damage the file.`
+- **Other recording failures** use the warning triangle with `This recording wasn't saved.` / `本次录音未保存。` underneath: no writable card (`Insert a writable microSD` / `请插入可用的 TF 卡`), microphone failure (`Microphone unavailable` / `麦克风不可用`) and a failed write (`Recording write failed` / `录音写入失败`).
 
 ### 4.8 Sleep
 The backlight is off and nothing is drawn. Touch is ignored.
@@ -155,8 +157,8 @@ Not every feature needs a button. Only frequent actions are on keys. Pages are r
 - **Freshness:** page data refreshes only when the device syncs. That's why every data page shows when it was last updated.
 
 ### 4.11 Quick panel (swipe down)
-- **Open:** swipe down (≥ 30 px) starting in the top 32 px (header band) of Today or a page. It slides down (0.28 s).
-- **Close:** swipe up (≥ 30 px), press OK or NEXT, or hold OK. Closing returns to the screen it was opened from.
+- **Open:** swipe down (≥ 30 px) starting in the top 32 px (header band) of Today or a page. The panel is a pull-down shade: it slides down over the page with its bottom edge under the finger. Releasing after at least 30 px finishes the slide; a shorter pull springs back. The remaining movement eases out in at most 0.28 s.
+- **Close:** swipe up (≥ 30 px), press OK or NEXT, or hold OK. Closing returns to the screen it was opened from. The panel slides up off that screen, which stays still underneath; while swiping, the panel follows the finger, and a swipe shorter than 30 px settles it back. A swipe up that starts on the brightness bar also closes the panel and leaves the brightness unchanged; the bar only follows sideways drags and taps.
 - **Layout** (10px padding, 8px gaps, background `#121418`):
   1. **Status row (24px):** Wi-Fi icon (or Wi-Fi-off), network name (SSID), and `Synced 10:40` / `已同步 10:40` or `Offline` / `离线`. A manual Wi-Fi session with no sync result shows the SSID and `Online` / `在线` after DHCP.
   2. **Two tiles (66px each, 12px radius):**
@@ -198,6 +200,18 @@ Not every feature needs a button. Only frequent actions are on keys. Pages are r
   - **Hint:** `Drag or tap · NEXT +5%`.
   - **Keys:** NEXT adds 5% (after 100% it wraps to 5%). OK or hold OK returns to Settings.
 - **Auto-sleep:** after the chosen idle time on Lock, Today, a page, the panel or settings, go to Sleep. Any button press or touch resets the timer. The timer is paused while the Move to Today? picker is open (it has its own 8 s timeout).
+
+### 4.13 Motion
+All motion eases out, matching the prototype's CSS.
+- **Screen changes:** the new screen enters 40px from its direction of travel while fading in from 20% opacity. The previous screen disappears at once. Upward 0.3 s, downward 0.28 s, sideways 0.26 s.
+  - Up: unlock.
+  - Left: All settings, and Brightness or Clock from Settings. Right: back from those screens.
+  - Other screen changes (picker, recording, Saved, errors, sleep and wake) switch without motion.
+- **Quick panel:** a shade that covers and uncovers the page without fading (§4.11). A full-screen fade with the bright brightness bar showed tearing on the panel, which has no tear-effect line.
+- **Pages:** follow the finger (§4.10).
+- **Edge bounce:** a swipe past the first or last page without dragging nudges the screen 14px toward the swipe at 30% of 0.34 s, 4px back at 65%, then rests.
+- **Content within a screen** (lock-screen notes, the When I Have Time line, picker titles): enters 28px from the side it comes from while fading in from transparent, 0.28 s.
+- **Toast:** fades in over 0.16 s.
 
 ## 5. Controls
 
@@ -273,6 +287,8 @@ Campus Wi-Fi (WPA2-Enterprise, PEAP) is covered separately in `docs/campus-wifi.
 4. **Fonts:** whether the font subset at five sizes fits in flash alongside the firmware and OTA partitions. If it doesn't, drop the 13px and 20px Chinese sizes.
 
 ## 12. Acceptance checks
+
+The host simulator (`firmware/sim/README.md`) renders the real firmware. `scenes/tour.txt` shows every screen in one contact sheet per language. `scenes/interact.txt` exercises the touch targets. Run both after a UI change and compare them with the prototype's *Screen states*.
 
 - **Every screen in §4:** renders at 240×240 in English and in Chinese, with nothing overlapping or clipped. Compare against the prototype's *Screen states* section.
 - **The controls table in §5:** each row behaves as written. Fast NEXT presses never leave Today. Separate OK holds go Picker → Today → Lock → Sleep. NEXT wakes the device to Lock.

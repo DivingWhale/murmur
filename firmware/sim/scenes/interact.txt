@@ -1,0 +1,89 @@
+# Touch targets and key paths. Used as a regression check: every snap must stay identical
+# across refactors that should not change behaviour.
+serial en
+sheet interact
+wait 600
+swipe 120 200 120 100 200
+wait 500
+snap
+# tap the second task to check it, then the count to show completed tasks
+tap 120 130
+wait 300
+snap
+tap 30 16
+wait 300
+snap
+tap 120 70
+wait 300
+tap 30 16
+wait 300
+snap
+# strip: swipe to browse, tap to open the picker, Move
+swipe 200 205 60 205 120
+wait 400
+snap
+tap 120 205
+wait 400
+snap
+swipe 200 60 60 60 120
+wait 400
+snap
+tap 180 165
+wait 400
+snap
+# quick panel: language tile, brightness drag, all settings
+swipe 120 6 120 120 100
+wait 400
+tap 177 70
+wait 300
+snap
+touch 40 140
+move 120 140 120
+wait 30
+lift
+wait 300
+snap
+tap 177 70
+wait 200
+tap 120 200
+wait 400
+# settings: scroll, open clock editor, adjust, save
+swipe 120 200 120 60 200
+wait 800
+snap
+tap 120 200
+wait 400
+snap
+tap 170 147
+tap 170 147
+tap 120 202
+wait 300
+snap
+tap 20 16
+wait 300
+tap 20 16
+wait 400
+snap
+swipe 120 120 120 20 120
+wait 400
+# recording via touch: cancel -> keep, then stop & save
+press plus
+wait 1500
+tap 60 200
+wait 300
+snap
+tap 60 200
+wait 300
+tap 180 200
+wait 300
+snap
+wait 2500
+hold ok 900
+wait 400
+snap
+hold ok 900
+wait 400
+snap
+press next
+wait 400
+snap

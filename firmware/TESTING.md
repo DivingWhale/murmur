@@ -6,6 +6,11 @@ How to check a firmware change on the real board, and a log of what has been ver
 
 Flash the finished application once. Verify the changed features, the serial response, and the existing recordings on the mounted volume. To test a cold-start feature, power-cycle the installed application.
 
+## After a UI change
+
+1. Run the simulator scenes (`sim/README.md`) and compare the contact sheets with the prototype's *Screen states*. `scenes/interact.txt` should produce identical images after a change that is not meant to alter the UI.
+2. On the device, swipe between Today, Claude and MD, open and close the quick panel, and unlock from the lock screen. Send `perf` right after: the frame rate during those animations should stay above 30 fps, and `loop_max_ms` should stay under about 50 ms.
+
 ## Targeted USB regression
 
 Run this when changing USB enumeration, reader startup, or the transition into and out of download mode.
@@ -21,6 +26,8 @@ If a run fails, tell apart a failure to enter the ROM loader from a failure to m
 A flash reset and a complete loss of board power are different test conditions. USB VBUS also supplies VSYS through D4, so releasing the battery latch with powered USB attached leaves the regulator running. See the [board schematic, BAT, Type-C and Power sections](https://files.waveshare.com/wiki/ESP32-S3-Touch-LCD-1.54/ESP32-S3-LCD-1.54-Schematic.pdf).
 
 ## Open items
+
+- Measure `perf` on hardware with the DMA display driver (not yet flashed).
 
 - Repeat the targeted USB regression with the battery connected.
 - The cause of the Windows Code 43 seen on 2026-11-21 is not established.

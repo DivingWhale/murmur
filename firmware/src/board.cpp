@@ -1,33 +1,56 @@
 #include "board.h"
-#include <SPI.h>
 #include <Wire.h>
+#include <driver/spi_master.h>
+#include <esp_heap_caps.h>
+#include <esp_lcd_panel_io.h>
 #include <lvgl.h>
+#include <atomic>
 
 namespace {
 constexpr int batteryEnable = 2;
-constexpr int cs = 21, dc = 45, lcdReset = 40, backlight = 46, touchReset = 47;
-lv_color_t pixels[240 * 16];
+constexpr int cs = 21, dc = 45, sclk = 38, mosi = 39, lcdReset = 40, backlight = 46, touchReset = 47;
+// Two DMA buffers: LVGL draws the next strip while the previous one is on the wire.
+// 40 MHz is the clock the original blocking driver used on this panel.
+constexpr int bufferLines = 40;
+constexpr unsigned pixelClock = 40 * 1000 * 1000;
+esp_lcd_panel_io_handle_t panel;
 lv_disp_draw_buf_t drawBuffer;
 lv_disp_drv_t display;
+std::atomic<uint32_t> frames{0};
 
-void command(uint8_t cmd, const uint8_t *data = nullptr, unsigned len = 0) {
-    digitalWrite(dc, LOW);
-    SPI.transfer(cmd);
-    digitalWrite(dc, HIGH);
-    if (len) SPI.writeBytes(data, len);
+bool transferDone(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t *, void *driver) {
+    lv_disp_flush_ready(static_cast<lv_disp_drv_t *>(driver)); // ISR-safe: only sets a flag.
+    return false;
 }
 void flush(lv_disp_drv_t *driver, const lv_area_t *area, lv_color_t *buf) {
-    uint8_t xs[] = {0, uint8_t(area->x1), 0, uint8_t(area->x2)};
-    uint8_t ys[] = {0, uint8_t(area->y1), 0, uint8_t(area->y2)};
-    SPI.beginTransaction(SPISettings(40000000, MSBFIRST, SPI_MODE3));
-    digitalWrite(cs, LOW);
-    command(0x2a, xs, sizeof(xs));
-    command(0x2b, ys, sizeof(ys));
-    command(0x2c);
-    SPI.writeBytes(reinterpret_cast<uint8_t *>(buf), lv_area_get_size(area)*2);
-    digitalWrite(cs, HIGH);
-    SPI.endTransaction();
-    lv_disp_flush_ready(driver);
+    const uint8_t xs[] = {0, uint8_t(area->x1), 0, uint8_t(area->x2)};
+    const uint8_t ys[] = {0, uint8_t(area->y1), 0, uint8_t(area->y2)};
+    esp_lcd_panel_io_tx_param(panel, 0x2a, xs, sizeof(xs));
+    esp_lcd_panel_io_tx_param(panel, 0x2b, ys, sizeof(ys));
+    esp_lcd_panel_io_tx_color(panel, 0x2c, buf, lv_area_get_size(area) * sizeof(lv_color_t));
+    if (lv_disp_flush_is_last(driver)) ++frames;
+}
+bool beginPanelBus() {
+    spi_bus_config_t bus{};
+    bus.sclk_io_num = sclk;
+    bus.mosi_io_num = mosi;
+    bus.miso_io_num = bus.quadwp_io_num = bus.quadhd_io_num = -1;
+    bus.max_transfer_sz = 240 * bufferLines * sizeof(lv_color_t);
+    if (spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO) != ESP_OK) return false;
+    esp_lcd_panel_io_spi_config_t io{};
+    io.cs_gpio_num = cs;
+    io.dc_gpio_num = dc;
+    io.spi_mode = 3;
+    io.pclk_hz = pixelClock;
+    io.trans_queue_depth = 4;
+    io.on_color_trans_done = transferDone;
+    io.user_ctx = &display;
+    io.lcd_cmd_bits = 8;
+    io.lcd_param_bits = 8;
+    return esp_lcd_new_panel_io_spi(reinterpret_cast<esp_lcd_spi_bus_handle_t>(SPI2_HOST), &io, &panel) == ESP_OK;
+}
+void command(uint8_t cmd, const uint8_t *data = nullptr, unsigned len = 0) {
+    esp_lcd_panel_io_tx_param(panel, cmd, data, len);
 }
 }
 
@@ -35,9 +58,8 @@ void boardBegin() {
     pinMode(batteryEnable, OUTPUT);
     digitalWrite(batteryEnable, HIGH);
     for (int pin : {plusPin, nextPin, okPin, 3}) pinMode(pin, INPUT_PULLUP);
-    for (int pin : {cs, dc, lcdReset, backlight, touchReset, 7}) pinMode(pin, OUTPUT);
+    for (int pin : {lcdReset, backlight, touchReset, 7}) pinMode(pin, OUTPUT);
     digitalWrite(7, LOW); // Speaker amplifier
-    digitalWrite(cs, HIGH);
     ledcSetup(0,5000,8);
     ledcAttachPin(backlight,0);
     setBacklight(0);
@@ -48,9 +70,7 @@ void boardBegin() {
     digitalWrite(touchReset, HIGH);
     delay(120);
     Wire.begin(42, 41, 400000);
-    SPI.begin(38, -1, 39, cs);
-    SPI.beginTransaction(SPISettings(40000000, MSBFIRST, SPI_MODE3));
-    digitalWrite(cs, LOW);
+    beginPanelBus();
     command(0x11); // Sleep out
     delay(120);
     const uint8_t mode = 0x55, orientation = 0;
@@ -58,15 +78,21 @@ void boardBegin() {
     command(0x36, &orientation, 1);
     command(0x21); // IPS panel inversion
     command(0x29);
-    digitalWrite(cs, HIGH);
-    SPI.endTransaction();
     lv_init();
-    lv_disp_draw_buf_init(&drawBuffer, pixels, nullptr, 240*16);
+    const size_t bytes = 240 * bufferLines * sizeof(lv_color_t);
+    auto *a = static_cast<lv_color_t *>(heap_caps_malloc(bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
+    auto *b = static_cast<lv_color_t *>(heap_caps_malloc(bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
+    lv_disp_draw_buf_init(&drawBuffer, a, b, 240 * bufferLines);
     lv_disp_drv_init(&display);
     display.hor_res = display.ver_res = 240;
     display.flush_cb = flush;
     display.draw_buf = &drawBuffer;
     lv_disp_drv_register(&display);
+}
+uint32_t displayFrames() { return frames.load(); }
+void setLowPower(bool low) {
+    const uint32_t mhz=low?80:240;
+    if (getCpuFrequencyMhz()!=mhz) setCpuFrequencyMhz(mhz);
 }
 void setBacklight(uint8_t percent) { ledcWrite(0,(percent*255+50)/100); }
 void releaseBatteryPower() { digitalWrite(batteryEnable, LOW); }
