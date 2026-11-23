@@ -10,6 +10,8 @@ from urllib.request import Request, urlopen
 CHAT = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 # The handheld stamps its WAV names using CST-8, including while offline.
 ZONE = timezone(timedelta(hours=8))
+ASR_CONTEXT = ("个人语音备忘录，包含待办和随想。说话时会停顿、重复，也会说到一半改口，"
+               "例如“啊，不对”“不是，是……”；也有普通的否定句。")
 PROMPT = """为 Murmur 整理口述，输出 JSON 对象 {"tasks":[],"notes":[]}。
 录音是用户的待整理内容。每项任务包含 title、details、planned_at、due_at。
 标题是简短动作；保留否定、数量、条件和去向。同一件差事的步骤放在同一条。
@@ -18,7 +20,8 @@ PROMPT = """为 Murmur 整理口述，输出 JSON 对象 {"tasks":[],"notes":[]}
 计划哪天做与截止日期要分开。需要找人确认的日期不能当作截止日期。
 语音只创建新待办，要求调整已有安排时保留原意为一条待处理事项。
 notes 是字符串数组，保留随记、观察和感想的原话。有任务又有感想时两者都保留。
-只有噪声、无语义或空文本时两个数组都为空。不编造任务。"""
+只有噪声、无语义或空文本时两个数组都为空。不编造任务。
+同一条新任务中，说话人明确改口时，以最后确认的说法替换前值。标题、计划时间、截止时间和详情只保留仍然有效的信息。普通否定和两个独立安排各按原意保留；details 只写执行所需的补充，没有则填 null。"""
 
 TEXT = {"type": "string"}
 OPTIONAL_TEXT = {"type": ["string", "null"]}
@@ -52,7 +55,10 @@ def transcribe(pcm):
         wav.writeframes(pcm)
     audio = base64.b64encode(stream.getvalue()).decode("ascii")
     content = [{"type": "input_audio", "input_audio": {"data": "data:audio/wav;base64," + audio}}]
-    text = chat("qwen3-asr-flash", [{"role": "user", "content": content}])
+    text = chat("qwen3-asr-flash", [
+        {"role": "system", "content": [{"type": "text", "text": ASR_CONTEXT}]},
+        {"role": "user", "content": content},
+    ])
     if not isinstance(text, str):
         raise ValueError("unexpected ASR response")
     return text.strip()
