@@ -69,6 +69,20 @@ Finish any file copy before starting a recording. Pressing PLUS gives the record
 
 Provision HKUSTGZ once with the [USB campus login helper](../docs/campus-wifi.md#getting-credentials-onto-the-device). Online sessions automatically synchronize network time. After a fully dated login the device remembers the campus server certificate and can recover time following a cold shutdown, then reconnect with full date validation. Settings → Clock and USB provide a fallback after a certificate change. Recording and task controls work offline. Automatic Pi upload, transcription, Obsidian synchronization and date-based task scheduling are pending. The Claude page shows its empty state. Sleep turns off the backlight and lowers the CPU clock. While awake, the CPU also drops to 80 MHz once the screen is still and returns to 240 MHz on any touch, key, screen change or animation.
 
+## Battery consumption log
+
+The firmware samples battery use once a minute from the moment it starts, with no setup. Each sample records the battery voltage at the end of the minute and how many seconds of that minute were spent with the screen awake, the CPU at 240 MHz, the Wi-Fi radio on, recording, a USB host attached and charging. It also records the mean backlight level and the number of display refreshes. The last 12 hours stay in PSRAM. Every 10 minutes a summary of the run is also saved to NVS, so it survives a flat battery.
+
+Over USB serial:
+
+| Command | Reply |
+|---|---|
+| `power` | Live voltage, charge state, CPU clock, backlight and Wi-Fi, then `power run …` totals since start |
+| `power log` | CSV of the per-minute samples, ending with `power end` |
+| `power last` | Summary of the previous run (up to its last 10-minute save) and `ended_by=`, the reset reason of the current start. `poweron` or `brownout` after an unattended run means the battery ran out |
+
+USB powers the board while it is attached, so drain is only meaningful in minutes with `usb_s=0` and `charge_s=0`. To measure, charge fully, unplug, and use the device normally or leave it in one state. Then either plug in and send `power log` before it dies, or let it run out and send `power last` after the next start. Voltage under load reads lower than at rest, so compare drain rates over spans of at least 10 minutes.
+
 ## Display and UI development
 
 The panel is driven over SPI with DMA (`esp_lcd`) from two 40-line buffers, so LVGL draws the next strip while the previous one is sent. LVGL refreshes every 15 ms. Send `perf` over USB serial to read the measured frame rate, the slowest main-loop pass since the last `perf`, and the current CPU clock. The simulator reports the same frame rate in virtual time, so it shows how often a screen redraws.
@@ -91,6 +105,7 @@ Icons are the prototype's SVG strokes, rasterized into `src/icons_data.cpp` by `
 | `src/tasks.*` | Task list and lock-screen notes. Sample data for now; the Pi sync replaces it here |
 | `src/icons.*`, `src/icons_data.cpp` | Generated stroke icons |
 | `src/board.*` | Display, backlight, touch, buttons, battery |
+| `src/power_log.*` | Per-minute battery consumption log (`power` serial commands) |
 | `src/audio.*` | Microphone capture task and WAV writer |
 | `src/card_usb.*` | TF card sharing between recorder and USB reader |
 | `src/campus_wifi.*`, `src/campus_profile.*` | HKUSTGZ login, saved profile, clock recovery |

@@ -86,11 +86,13 @@ void boardBegin() {
 }
 void releaseBatteryPower() {}
 void setBacklight(uint8_t percent) { backlight = percent; }
+uint8_t backlightPercent() { return backlight; }
 uint32_t displayFrames() { return frames; }
 uint32_t simMhz = 240;
 void setLowPower(bool low) { simMhz = low ? 80 : 240; }
 uint32_t cpuMhz() { return simMhz; }
 int batteryPercent() { return simBattery; }
+int batteryMillivolts() { return 3900; }
 bool charging() { return simCharging; }
 Contact readContact(int &x, int &y) {
     if (!touching) return Contact::Released;
@@ -136,6 +138,9 @@ void beginCampusDiagnostics() {}
 void diagLoopPhase(uint8_t) {}
 uint32_t campusClockHint() { return 0; }
 bool hasCampusProfile() { return true; }
+void beginPowerLog() {}
+void powerLogTick(uint32_t, bool, bool) {}
+void powerCommand(const char *, Print &out) { out.println("power sim"); }
 
 // ---------------------------------------------------------------- PNG output
 namespace {
