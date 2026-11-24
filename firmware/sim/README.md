@@ -19,6 +19,8 @@ work/sim/murmur-sim firmware/sim/scenes/tour.txt work/sim/out
 | `tap <x> <y>` · `swipe <x1> <y1> <x2> <y2> <ms>` | Touch gestures |
 | `touch <x> <y>` · `move <x> <y> <ms>` · `lift` | Touch step by step |
 | `serial <line>` | Send a USB serial command, such as `serial zh` |
+| `notice <planned> <due> <title>` | Queue a new task notification. Use an ISO date/time or `-` for each date. |
+| `clear-notes` · `lock-note <id> <stamp> <text>` | Simulate paired lock-screen notes. Supply IDs in ascending order and use `-` for unknown recording time. |
 | `online 0\|1` · `card 0\|1` · `battery <pct>` · `charging 0\|1` · `clock unset` | Fake hardware state |
 | `shot <name> [scale]` | Write `<name>.png`, 2× by default |
 | `sheet <name>` then `snap` | Collect screens into one contact sheet |

@@ -1,0 +1,124 @@
+/* The Hearth heading stays available even when the last favorite is unchecked. */
+.hearth-embed:has(a[data-href$="/锁屏随记"]) {
+  & h3 {
+    margin: 0 0 8px;
+    padding-bottom: 0;
+    font: 700 16px/1.4 var(--font-interface);
+  }
+  & h3 a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--text-normal) !important;
+    text-decoration: none !important;
+  }
+  & h3 a::after {
+    content: "›";
+    font: 400 20px/1 var(--font-interface);
+    color: var(--text-muted);
+  }
+}
+
+.bases-embed:is([src$="Murmur Memos.base#主页收藏"], [src$="Murmur Memos.base#锁屏选择"]) {
+  --bases-table-border-width: 0px;
+  --bases-table-row-height: 36px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+
+  & :is(.bases-header, .bases-thead, .edit-block-button) { display: none; }
+  & :is(.bases-view, .bases-table-container, .bases-table, .bases-tbody) {
+    margin: 0;
+    border: 0;
+    background: transparent;
+  }
+  & :is(.bases-tr, .bases-td, .bases-table-container, .bases-table, .bases-tbody) { box-shadow: none; }
+  & .bases-tr {
+    width: 100% !important;
+    height: calc(var(--bases-table-row-height, 30px) - 2px);
+    background: color-mix(in srgb, var(--interactive-accent) 9%, transparent);
+    border-radius: 20px;
+  }
+  & .bases-td[data-property="note.show_on_device"] {
+    width: 32px !important;
+  }
+  & .bases-td[data-property="formula.memoLink"] {
+    inset-inline-start: 32px !important;
+    width: calc(100% - 32px) !important;
+  }
+  & .bases-td, & .bases-table-cell {
+    border: none;
+    background: transparent;
+  }
+  & .metadata-property-value { justify-content: center; }
+  & .internal-link {
+    color: var(--text-normal) !important;
+    text-decoration: none !important;
+    font-weight: 500;
+    font-size: var(--font-ui-medium);
+  }
+  & .internal-link:hover { color: var(--text-accent) !important; }
+  & :is(a, input):focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 2px;
+  }
+}
+
+.murmur-favorites-page {
+  --file-line-width: 850px;
+  --murmur-surface: color-mix(in srgb, var(--interactive-accent) 9%, var(--background-primary));
+  & :is(.inline-title, .metadata-container) { display: none !important; }
+  & .banner-wrapper {
+    width: min(var(--file-line-width), calc(100% - 32px)) !important;
+    margin: 26px auto 14px !important;
+    border-radius: 28px;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--interactive-accent) 3%, var(--background-primary));
+  }
+  & .banner-image { object-fit: fill; }
+  & .banner-header-content { color: var(--text-normal); }
+  & .banner-icon .svg-icon {
+    width: 28px;
+    height: 28px;
+    color: var(--interactive-accent);
+    fill: currentColor;
+  }
+  & .banner-header-title {
+    font-family: var(--font-interface);
+    font-weight: 700;
+    letter-spacing: -.025em;
+  }
+  & .callout[data-callout="murmur-favorites"] {
+    background: var(--murmur-surface);
+    border: 0;
+    border-radius: 28px;
+    box-shadow: none;
+    padding: 20px 22px 22px;
+    margin: 0;
+  }
+  & .callout-title { color: var(--text-normal); font: 700 16px/1.4 var(--font-interface); }
+  & .callout-icon { display: none; }
+  & .callout-content {
+    background: transparent;
+    padding: 0;
+    & > p:first-child { color: var(--text-muted); font-size: 14px; margin: 8px 0 14px; }
+  }
+  & .bases-embed[src$="Murmur Memos.base#锁屏选择"] {
+    margin: 0;
+    & .bases-view { border: 0 !important; }
+  }
+}
+.theme-dark .murmur-favorites-page .banner-image { opacity: .48; }
+
+/* Keep sync keys in YAML. Leave the lock-screen control and source link visible. */
+.metadata-container:has([data-property-key="murmur_id"], [data-property-key="murmur_client_id"]) {
+  & .metadata-property:is([data-property-key="murmur_id"],
+                          [data-property-key="murmur_client_id"],
+                          [data-property-key="murmur_type"],
+                          [data-property-key="murmur_preview"],
+                          [data-property-key="recording_id"]) {
+    display: none;
+  }
+}

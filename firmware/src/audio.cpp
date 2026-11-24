@@ -298,7 +298,14 @@ AudioResult finishRecording() {
         if (close(file) != 0) ok = false;
         file = -1;
     }
-    if (ok) ok = rename(partial, finalPath) == 0;
+    if (ok) {
+        // Publish the outbox marker first. The sender only accepts it beside a finalized WAV.
+        char marker[96];
+        snprintf(marker,sizeof(marker),"%s.send",finalPath);
+        int fd=open(marker,O_WRONLY|O_CREAT|O_EXCL,0600);
+        ok=fd>=0 && close(fd)==0;
+        if (ok) ok=rename(partial,finalPath)==0;
+    }
     closeSession();
     return ok ? AudioResult::Ok : AudioResult::Write;
 }

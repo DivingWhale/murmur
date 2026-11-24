@@ -1,14 +1,19 @@
+#include <Arduino.h>
 #include "audio.h"
 #include "board.h"
 #include "card_usb.h"
 #include "campus_wifi.h"
 #include "campus_profile.h"
+#include "diagnostics.h"
+#include "power_log.h"
 #include <cstring>
 #include <USB.h>
 #include "fonts.h"
 #include "icons.h"
 #include "ui_kit.h"
 #include "tasks.h"
+#include "task_notice.h"
+#include "pi_sync.h"
 #include <Preferences.h>
 #include <esp_task_wdt.h>
 #include <sys/time.h>
@@ -48,7 +53,8 @@ int brightness=16, savedBrightness=16, sleepOption=1, settingFocus=0, settingsY=
 const uint32_t idleLimits[]={30000,60000,300000,0};
 int64_t freeBytes=-1;
 uint32_t lastInput, toastStarted;
-bool offlineToast, settingsTouch;
+bool toastActive, settingsTouch;
+std::string taskToast;
 int slideDirection;
 Motion pageMotion=Motion::None;
 Screen renderedScreen=Screen::Lock;
@@ -58,9 +64,11 @@ lv_obj_t *settingsList, *settingRows[SettingCount], *brightnessFill, *brightPerc
 constexpr int pageWidth=240;
 constexpr Screen pages[]={Screen::Today,Screen::Claude,Screen::MD};
 lv_obj_t *pageTrack;
-// Keep the page alive under the quick panel so moving the shade reveals it immediately.
+// The quick panel is a pull-down shade (§4.11) in its own layer above the page it came from, which
+// stays built underneath so moving the shade reveals it immediately. Closed, it sits one screen up.
 lv_obj_t *shade;
 bool shadeDragging, panelDragging, shadeAnimating;
+constexpr int shadeClosed=-240;
 bool draggingPages=false;
 int pageIndex(Screen value) {
     for (int i=0;i<3;++i) if (pages[i]==value) return i;
@@ -80,12 +88,23 @@ void removeShade() {
     }
     shadeDragging=panelDragging=shadeAnimating=false;
 }
+// While the open panel covers the page, the page is hidden: its scrolling titles then stop redrawing
+// unseen pixels (and the panel's entrance fade from Settings shows no page). It is shown again as
+// soon as the panel moves.
+void coverPage() {
+    if (pageTrack) lv_obj_add_flag(pageTrack,LV_OBJ_FLAG_HIDDEN);
+}
+void revealPage() {
+    if (pageTrack) lv_obj_clear_flag(pageTrack,LV_OBJ_FLAG_HIDDEN);
+}
 void settleShade(int to) {
     const int from=lv_obj_get_style_translate_y(shade,0);
     lv_anim_del(shade,moveShade);
+    if (to==shadeClosed) revealPage();
     shadeAnimating=from!=to;
     if (!shadeAnimating) {
-        if (to==-240) removeShade();
+        if (to==shadeClosed) removeShade();
+        else if (to==0) coverPage();
         return;
     }
     const int ms=constrain(abs(to-from)*280/240,120,280);
@@ -96,14 +115,15 @@ void settleShade(int to) {
     lv_anim_set_path_cb(&a,lv_anim_path_ease_out);
     lv_anim_set_ready_cb(&a,[](lv_anim_t *done){
         shadeAnimating=false;
-        if (done->end_value==-240) removeShade();
+        if (done->end_value==shadeClosed) removeShade();
+        else if (done->end_value==0) coverPage();
     });
     lv_anim_start(&a);
 }
 Preferences prefs;
 bool sleepAfter, dirty=true;
 bool powerHoldStarted=false;
-int focused=0, taskScrollY=0, ticket=0, note=0, battery=-1;
+int focused=0, taskScrollY=0, ticket=0, note=0, shownNoteId=0, battery=-1;
 bool isCharging, chargeSample;
 uint32_t chargeChangedAt;
 // The pager keeps one header per page alive while the user swipes.
@@ -125,13 +145,13 @@ void paintWave() {
     }
 }
 lv_obj_t *overlay, *progressFill;
-lv_obj_t *tickerTitle, *tickerChip, *tickerChipText, *tickerDots[model::maxTasks];
+lv_obj_t *tickerTitle, *tickerChip, *tickerChipText, *tickerDots[6];
 lv_anim_t scrollAnimation;
 unsigned lastSeconds;
 uint8_t lastLevel;
 struct Item { const char *zh, *english; }; // A label in both languages.
 // Screens list Today's unfinished tasks, or the finished ones when the header count is tapped.
-int tasks(bool today,int *ids) { return today?model::today(ids,showCompleted):model::later(ids); }
+const std::vector<int>& tasks(bool today) { return model::ids(today,showCompleted); }
 void storeBrightness();
 lv_obj_t *buildShade();
 void releaseShade(bool open,Screen from);
@@ -144,7 +164,7 @@ void settlePage(int index) {
     lastInput=entered=interacted=rotated=millis();
     motionEnds=lastInput;
     if (toast) { lv_obj_del(toast); toast=nullptr; }
-    offlineToast=false;
+    toastActive=false;
     if (target==start) return;
     lv_anim_t a; lv_anim_init(&a);
     lv_anim_set_var(&a,pageTrack); lv_anim_set_exec_cb(&a,positionTrack);
@@ -157,7 +177,7 @@ void go(Screen target) {
     if (screen==Screen::Settings && settingsList) settingsY=lv_obj_get_scroll_y(settingsList);
     storeBrightness();
     settingsTouch=false;
-    offlineToast=false;
+    toastActive=false;
     if (toast) { lv_obj_del(toast); toast=nullptr; }
     pageMotion=Motion::None;
     draggingPages=false;
@@ -166,13 +186,13 @@ void go(Screen target) {
         screen=renderedScreen=target;
         lastInput=entered=interacted=rotated=millis();
         panelDragging=false;
-        settleShade(-240);
+        settleShade(shadeClosed);
         return;
     }
     removeShade();
     if (target==Screen::Panel && pageTrack && pageIndex(screen)>=0 && screen==renderedScreen) {
         shade=buildShade();
-        moveShade(shade,-240);
+        moveShade(shade,shadeClosed);
         releaseShade(true,screen);
         return;
     }
@@ -180,7 +200,8 @@ void go(Screen target) {
         settlePage(pageIndex(target));
         return;
     }
-    const bool waking=screen==Screen::Sleep && target!=Screen::Sleep && target!=Screen::Recording;
+    const bool wasSleeping=screen==Screen::Sleep;
+    const bool waking=wasSleeping && target!=Screen::Sleep;
     if (target==Screen::Panel && screen==Screen::Settings) pageMotion=Motion::Right;
     else if (screen==Screen::Panel && target==Screen::Settings) pageMotion=Motion::Left;
     else if (screen==Screen::Lock && target==Screen::Today) pageMotion=Motion::Up;
@@ -189,9 +210,11 @@ void go(Screen target) {
     screen=target;
     lastInput=entered=interacted=rotated=millis();
     dirty=true;
+    if (target==Screen::Sleep && !wasSleeping) diagnostics::record(diagnostics::Event::Sleep);
+    if (waking) diagnostics::record(diagnostics::Event::Wake);
     setLowPower(target==Screen::Sleep);
     setBacklight(target==Screen::Sleep?0:brightness*5);
-    if (waking) startCampusWifiOnWake();
+    if (waking && target!=Screen::Recording) startCampusWifiOnWake();
 }
 void showError(const char *zh,const char *english) {
     faultZh=zh; faultEn=english; go(Screen::Error);
@@ -205,7 +228,7 @@ void audioError(AudioResult r) {
 void recordKey() {
     if (recordingActive()) {
         auto result=finishRecording();
-        if (result==AudioResult::Ok) { model::notePending(); go(Screen::Saved); startCampusWifiAfterRecording(); } // Upload point once the Pi sync exists.
+        if (result==AudioResult::Ok) { model::notePending(); go(Screen::Saved); startCampusWifiAfterRecording(); }
         else audioError(result);
         return;
     }
@@ -318,12 +341,41 @@ void lockView() {
     refreshClock();
 
     int noteTop=top+headerHeight+10;
-    auto *body=label(14,noteTop,212,model::note(note),en?17:18,ink,LV_TEXT_ALIGN_LEFT,LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_line_space(body,en?2:4,0);
+    const int count=model::noteCount();
+    if (!count) {
+        note=shownNoteId=0;
+        label(14,noteTop,212,tr("还没有随记。","No notes yet."),17,muted);
+        label(40,211,186,tr("OK/上滑 解锁 · + 录音","OK/↑ unlock · + record"),14,muted,LV_TEXT_ALIGN_RIGHT);
+        return;
+    }
+    if (note>=count || model::noteId(note)!=shownNoteId) {
+        note=0;
+        if (shownNoteId) for (int i=0;i<count;++i) if (model::noteId(i)==shownNoteId) {note=i;break;}
+    }
+    shownNoteId=model::noteId(note);
+    const char *text=model::note(note);
+    bool useHan=!en;
+    if (piSync::paired()) {
+        useHan=false;
+        uint32_t pos=0;
+        while (text[pos]) {
+            auto cp=_lv_txt_encoded_next(text,&pos);
+            if ((cp>=0x3400 && cp<=0x9fff) || (cp>=0xf900 && cp<=0xfaff) || cp>=0x20000) {useHan=true;break;}
+        }
+    }
+    auto *body=label(14,noteTop,212,text,useHan?18:17,ink,LV_TEXT_ALIGN_LEFT,LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_line_space(body,useHan?4:2,0);
     lv_obj_update_layout(body);
+    const int maxBody=204-noteTop-6-fontFor(14)->line_height;
+    if (lv_obj_get_height(body)>maxBody) {
+        const int lineHeight=fontFor(useHan?18:17)->line_height+(useHan?4:2);
+        lv_label_set_long_mode(body,LV_LABEL_LONG_DOT);
+        lv_obj_set_height(body,((maxBody+(useHan?4:2))/lineHeight)*lineHeight-(useHan?4:2));
+        lv_obj_update_layout(body);
+    }
     auto *stamp=label(14,noteTop+6+lv_obj_get_height(body),212,model::noteTime(note),14,muted);
     animateNote(body); animateNote(stamp);
-    dots(14,221,2,note);
+    if (count>1) dots(14,221,min(count,3),note%min(count,3));
     label(40,211,186,tr("OK/上滑 解锁 · + 录音","OK/↑ unlock · + record"),14,muted,LV_TEXT_ALIGN_RIGHT);
 }
 lv_obj_t *scrollTitle(int x,int y,int w,const char *s,bool scroll,bool done=false) {
@@ -335,7 +387,7 @@ lv_obj_t *scrollTitle(int x,int y,int w,const char *s,bool scroll,bool done=fals
     if (done) lv_obj_set_style_text_decor(o,LV_TEXT_DECOR_STRIKETHROUGH,0);
     return o;
 }
-void updateTicker(int *later,int count) {
+void updateTicker(const std::vector<int>& later,int count) {
     ticket%=count;
     int id=later[ticket], width=model::deadline(id)?145:210;
     lv_obj_set_width(tickerTitle,width);
@@ -345,8 +397,8 @@ void updateTicker(int *later,int count) {
         lv_obj_clear_flag(tickerChip,LV_OBJ_FLAG_HIDDEN);
     }
     else lv_obj_add_flag(tickerChip,LV_OBJ_FLAG_HIDDEN);
-    for (int i=0;i<count;++i)
-        lv_obj_set_style_bg_color(tickerDots[i],lv_color_hex(i==ticket?ink:dim),0);
+    for (int i=0;i<min(count,6);++i)
+        lv_obj_set_style_bg_color(tickerDots[i],lv_color_hex(i==ticket%6?ink:dim),0);
     int textWidth=lv_txt_get_width(model::title(id),strlen(model::title(id)),fontFor(en?16:17),0,LV_TEXT_FLAG_NONE);
     scrollPeriod=textWidth<=width?3000:1000+(textWidth+40)*1000/30;
     animateNote(tickerTitle); animateNote(tickerChip);
@@ -363,8 +415,43 @@ void syncStatus(int right,int cy) {
     if (online) icon(parent,Icon::Sync,11,right-w-4-11,cy-6,color);
     else icon(parent,Icon::WifiOff,12,right-w-4-12,cy-6,color);
 }
+void taskRow(int id,int i,int y) {
+    bool focus=focused==i, done=model::done(id);
+    if (focus) box(5,y,230,layout::rowHeight,surface,9,yellow,2);
+    box(15,y+20,20,20,done?muted:(focus?surface:bg),10,done?muted:dim,2);
+    if (done) icon(panelRoot,Icon::Tick,12,19,y+24,bg);
+    const char *dueText=model::deadline(id);
+    String combined;
+    if (piSync::paired() && dueText && *model::detail(id))
+        combined=String(dueText)+" · "+model::detail(id);
+    const char *meta=*combined.c_str()?combined.c_str():(dueText?dueText:model::detail(id));
+    scrollTitle(45,y+(*meta?8:19),178,model::title(id),focus,done);
+    if (*meta) label(45,y+33,178,meta,14,model::deadline(id)?due:muted);
+}
+lv_obj_t *rowCells[6];
+int firstVisible;
+void fillTaskWindow(lv_obj_t *list) {
+    if (list!=taskList) return;
+    const auto &ids=tasks(true);
+    int first=max(0,int(lv_obj_get_scroll_y(list))/layout::rowPitch-1);
+    if (first==firstVisible) return;
+    firstVisible=first;
+    auto *old=panelRoot;
+    for (int slot=0;slot<6;++slot) {
+        auto *cell=rowCells[slot];
+        int i=first+slot;
+        lv_obj_clean(cell);
+        if (i>=int(ids.size())) {lv_obj_add_flag(cell,LV_OBJ_FLAG_HIDDEN); continue;}
+        lv_obj_clear_flag(cell,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_y(cell,i*layout::rowPitch);
+        panelRoot=cell;
+        taskRow(ids[i],i,0);
+    }
+    panelRoot=old;
+}
 void todayView() {
-    int ids[model::maxTasks],later[model::maxTasks],n=tasks(true,ids),k=tasks(false,later);
+    const auto &ids=tasks(true), &later=tasks(false);
+    int n=ids.size(),k=later.size();
     focused=constrain(focused,0,max(0,n-(k==0)));
     char remaining[32];
     snprintf(remaining,sizeof(remaining),showCompleted?tr("已完成：%d","Done: %d"):tr("剩余数：%d","Left: %d"),n);
@@ -383,15 +470,17 @@ void todayView() {
     lv_obj_set_scrollbar_mode(taskList,LV_SCROLLBAR_MODE_OFF);
     panelRoot=taskList;
     if (!n) center(47,showCompleted?tr("暂无已完成任务","No completed tasks"):tr("全部完成","All clear"),17,muted);
-    for (int i=0;i<n;++i) {
-        int id=ids[i],y=i*layout::rowPitch;
-        bool focus=focused==i, done=model::done(id);
-        if (focus) box(5,y,230,layout::rowHeight,surface,9,yellow,2);
-        box(15,y+20,20,20,done?muted:(focus?surface:bg),10,done?muted:dim,2);
-        if (done) icon(taskList,Icon::Tick,12,19,y+24,bg);
-        const char *meta=model::deadline(id)?model::deadline(id):model::detail(id);
-        scrollTitle(45,y+(*meta?8:19),178,model::title(id),focus,done);
-        if (*meta) label(45,y+33,178,meta,14,model::deadline(id)?due:muted);
+    if (n<=12) {
+        for (int i=0;i<n;++i) taskRow(ids[i],i,i*layout::rowPitch);
+    } else {
+        // Reserve the full scroll distance, but keep only the nearby rows in LVGL's heap.
+        box(0,n*layout::rowPitch-4,1,1,bg);
+        for (auto &cell:rowCells) cell=box(0,0,240,layout::rowPitch,bg);
+        firstVisible=-1;
+        fillTaskWindow(taskList);
+        lv_obj_add_event_cb(taskList,[](lv_event_t *event){
+            fillTaskWindow(lv_event_get_target(event));
+        },LV_EVENT_SCROLL,nullptr);
     }
     panelRoot=previousParent;
     lv_obj_update_layout(taskList);
@@ -408,14 +497,14 @@ void todayView() {
     label(14,179,183,pause?tr("已暂停 · 按 OK 选择","PAUSED · OK TO CHOOSE"):
                         tr("有空再做","WHEN I HAVE TIME"),13,pause?yellow:muted);
     if (!k) { label(14,201,210,tr("暂无任务","Nothing waiting"),17,dim); return; }
-    for (int i=0;i<k;++i) tickerDots[i]=box(226-9*k+9*i,185,5,5,dim,3);
+    for (int i=0;i<min(k,6);++i) tickerDots[i]=box(226-9*min(k,6)+9*i,185,5,5,dim,3);
     tickerTitle=scrollTitle(14,200,210,"",true);
     tickerChip=box(166,200,60,23,0x30251c,8);
     tickerChipText=label(0,2,60,"",13,due,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,tickerChip);
     updateTicker(later,k);
 }
 void pickerView() {
-    int ids[model::maxTasks],n=tasks(false,ids);
+    const auto &ids=tasks(false); int n=ids.size();
     if (!n) { go(Screen::Today); return; }
     ticket%=n;
     center(18,tr("移到今天？","MOVE TO TODAY?"),14,yellow);
@@ -429,13 +518,13 @@ void pickerView() {
     const int rowY=(lines==1?53:41)+lines*fontFor(20)->line_height+8;
     const char *deadline=model::deadline(ids[ticket]);
     const bool chip=deadline!=nullptr;
-    const int dotsWidth=n>1?9*n-4:0, chipWidth=chip?60:0, gap=chip && n>1?10:0;
+    const int dotsWidth=n>1?9*min(n,6)-4:0, chipWidth=chip?60:0, gap=chip && n>1?10:0;
     const int rowX=(240-chipWidth-gap-dotsWidth)/2;
     if (chip) {
         auto *c=box(rowX,rowY-4,60,23,0x30251c,8);
         label(0,2,60,deadline,13,due,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,c);
     }
-    if (n>1) dots(rowX+chipWidth+gap,rowY+5,n,ticket);
+    if (n>1) dots(rowX+chipWidth+gap,rowY+5,min(n,6),ticket%6);
     const Rect &c=layout::pickCancel, &m=layout::pickMove;
     box(c.x,c.y,c.w,c.h,surface,9);
     box(m.x,m.y,m.w,m.h,yellow,9);
@@ -489,8 +578,8 @@ void storeBrightness() {
     if (brightness!=savedBrightness && prefs.putUChar("brightness",brightness))
         savedBrightness=brightness;
 }
-void panelView() {
-    auto *panel=box(0,0,240,240,0x121418);
+// Fills the quick panel's layer.
+void panelView(lv_obj_t *panel) {
     panelRoot=panel;
     icon(panel,campusOnline()?Icon::Wifi:Icon::WifiOff,15,10,15,muted);
     label(31,22-fontFor(14)->line_height/2,110,campusOnline()?"HKUSTGZ":tr("未连接","Disconnected"),14);
@@ -534,7 +623,7 @@ void settingsView() {
         const char *sub="";
         switch(i) {
         case Network: value=campusOnline()?tr("在线","Online"):tr("离线","Offline"); sub=campusOnline()?"HKUSTGZ":tr("未连接","Disconnected"); break;
-        case Sync: sub=tr("尚未同步","Never synced"); break;
+        case Sync: sub=piSync::paired()?piSync::statusText():tr("尚未同步","Never synced"); break;
         case Language: value=tr("中文","English"); break;
         case Bright: value=String(brightness*5)+"%"; break;
         case AutoSleep: value=tr(times[sleepOption].zh,times[sleepOption].english); break;
@@ -570,8 +659,9 @@ void changeLanguage() {
     en=!en; prefs.putBool("english",en); dirty=true;
 }
 void syncNow() {
+    if (piSync::paired()) piSync::request();
     if (screen==Screen::Panel) go(panelFrom);
-    offlineToast=true; toastStarted=millis(); dirty=true;
+    taskToast.clear(); toastActive=true; toastStarted=millis(); dirty=true;
 }
 // A fully depowered unit may need a trusted date before PEAP authentication.
 int clockParts[5],clockField;
@@ -594,7 +684,10 @@ void nextClockField() {
     t.tm_year=clockParts[0]-1900; t.tm_mon=clockParts[1]-1; t.tm_mday=clockParts[2];
     t.tm_hour=clockParts[3]; t.tm_min=clockParts[4];
     timeval tv{mktime(&t),0};
-    if (tv.tv_sec>=1704067200 && settimeofday(&tv,nullptr)==0) go(Screen::Settings);
+    if (tv.tv_sec>=1704067200 && settimeofday(&tv,nullptr)==0) {
+        diagnostics::record(diagnostics::Event::ClockSet,tv.tv_sec);
+        go(Screen::Settings);
+    }
 }
 void editClock() {
     time_t now=time(nullptr);
@@ -651,6 +744,7 @@ void pagesView(Screen page) {
 }
 void render() {
     dirty=false;
+    if (screen!=Screen::Sleep) setLowPower(false); // Rebuilding a screen is the heaviest UI work.
     if (screen==Screen::Settings && settingsList) settingsY=lv_obj_get_scroll_y(settingsList);
     if (taskList) taskScrollY=lv_obj_get_scroll_y(taskList);
     taskList=nullptr;
@@ -674,6 +768,7 @@ void render() {
     case Screen::Picker: pickerView(); break;
     case Screen::Panel:
         pagesView(panelFrom);
+        coverPage();
         shade=buildShade();
         break;
     case Screen::Settings: settingsView(); break;
@@ -745,12 +840,14 @@ void render() {
     if (pageMotion==Motion::EdgeLeft || pageMotion==Motion::EdgeRight) bounce(pageLayer,pageMotion==Motion::EdgeLeft?-1:1);
     else if (pageMotion!=Motion::None) motionEnds=millis()+enter(shade?shade:pageLayer,pageMotion);
     pageMotion=Motion::None; slideDirection=0;
-    if (offlineToast) {
+    if (toastActive) {
         // Prototype toast: an ink pill 82 px above the bottom edge.
-        const char *text=campusOnline()?tr("尚未同步","Never synced"):tr("离线","Offline");
-        const int w=lv_txt_get_width(text,strlen(text),fontFor(14),0,LV_TEXT_FLAG_NONE)+24, h=fontFor(14)->line_height+10;
+        const char *text=taskToast.empty()?piSync::statusText():taskToast.c_str();
+        if (taskToast.empty() && !piSync::paired()) text=campusOnline()?tr("尚未同步","Never synced"):tr("离线","Offline");
+        const int w=min(224,int(lv_txt_get_width(text,strlen(text),fontFor(14),0,LV_TEXT_FLAG_NONE))+24);
+        const int h=fontFor(14)->line_height+10;
         toast=box((240-w)/2,240-82-h,w,h,ink,h/2);
-        label(0,5,w,text,14,bg,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_CLIP,toast);
+        label(10,5,w-20,text,14,bg,LV_TEXT_ALIGN_CENTER,LV_LABEL_LONG_DOT,toast);
         fade(toast,LV_OPA_TRANSP,160);
     }
 }
@@ -759,22 +856,27 @@ void saveChange(bool saved) {
     dirty=true;
 }
 void choose() {
-    int ids[model::maxTasks],n=tasks(false,ids);
+    const auto &ids=tasks(false); int n=ids.size();
     if (!n) return;
     int id=ids[ticket%n];
     showCompleted=false; revealFocus=true;
     go(Screen::Today);
     saveChange(model::moveToToday(id));
-    int today[model::maxTasks];
-    int count=tasks(true,today);
+    const auto &today=tasks(true);
+    int count=today.size();
     for (int i=0;i<count;++i) if (today[i]==id) focused=i;
     ticket=0;
 }
 void browse(int step) {
     slideDirection=step;
-    if (screen==Screen::Lock) note=(note+step+model::noteCount())%model::noteCount();
+    if (screen==Screen::Lock) {
+        int count=model::noteCount();
+        if (count<=1) { rotated=millis(); slideDirection=0; return; }
+        note=(note+step+count)%count;
+        shownNoteId=model::noteId(note);
+    }
     else {
-        int ids[model::maxTasks],n=tasks(false,ids);
+        const auto &ids=tasks(false); int n=ids.size();
         if (!n) return;
         ticket=(ticket+step+n)%n;
     }
@@ -784,7 +886,8 @@ void browse(int step) {
 void shortKey(int pin) {
     if (pin==plusPin) { recordKey(); return; }
     bool ok=pin==okPin;
-    int ids[model::maxTasks],later[model::maxTasks],n=tasks(true,ids),k=tasks(false,later);
+    const auto &ids=tasks(true), &later=tasks(false);
+    int n=ids.size(),k=later.size();
     interacted=millis();
     switch(screen) {
     case Screen::Recording: if (!ok) askDiscard(); break;
@@ -835,7 +938,7 @@ bool holdTarget(int pin,Screen &target) {
 }
 void holdOverlay(Screen target,int percent) {
     if (!overlay) {
-        overlay=box(0,0,240,240,0,0,0,0,screen==Screen::Panel?shade:pageLayer);
+        overlay=box(0,0,240,240,0,0,0,0,lv_scr_act()); // Above the page and any moving shade.
         lv_obj_set_style_bg_opa(overlay,185,0);
         const char *s=tr("返回","Back");
         Icon glyph=Icon::Back;
@@ -894,7 +997,9 @@ void pollKeys(uint32_t now) {
 void gesture(int x,int y,int dx,int dy) {
     const bool horizontal=abs(dx)>12 && abs(dx)>abs(dy);
     const bool tap=abs(dx)<=12 && abs(dy)<=12;
-    int step=dx<0?1:-1, ids[model::maxTasks], later[model::maxTasks], n=tasks(true,ids), k=tasks(false,later);
+    int step=dx<0?1:-1;
+    const auto &ids=tasks(true), &later=tasks(false);
+    int n=ids.size(),k=later.size();
     interacted=millis();
     if (recordingActive()) {
         const bool save=layout::recSave.contains(x,y);
@@ -955,12 +1060,8 @@ void gesture(int x,int y,int dx,int dy) {
 }
 // Builds the quick panel in its own layer above the current screen, for pulling it down.
 lv_obj_t *buildShade() {
-    lv_obj_t *page=pageLayer;
-    pageLayer=box(0,0,240,240,0x121418,0,0,0,lv_scr_act());
-    lv_obj_t *layer=pageLayer;
-    panelRoot=nullptr;
-    panelView();
-    pageLayer=page;
+    auto *layer=box(0,0,240,240,0x121418,0,0,0,lv_scr_act());
+    panelView(layer);
     return layer;
 }
 // The shade's bottom edge follows the finger.
@@ -968,13 +1069,13 @@ void pullShade(int fingerY) { moveShade(shade,min(0,fingerY-240)); }
 void releaseShade(bool open,Screen from) {
     shadeDragging=false;
     if (!open) {
-        settleShade(-240);
+        settleShade(shadeClosed);
         return;
     }
     panelFrom=from;
     screen=renderedScreen=Screen::Panel;
     lastInput=entered=interacted=rotated=millis();
-    offlineToast=false;
+    toastActive=false;
     if (toast) { lv_obj_del(toast); toast=nullptr; }
     settleShade(0);
 }
@@ -1024,6 +1125,7 @@ void pollTouch(uint32_t now) {
         if (screen==Screen::Panel && from==screen && !sliderMoved && dy<=-8 && -dy>abs(dx)) {
             panelDragging=true;
             settingsTouch=false;
+            revealPage();
             moveShade(shade,dy);
             return;
         }
@@ -1099,22 +1201,25 @@ void pollTouch(uint32_t now) {
     }
 }
 void updateView(uint32_t now) {
-    int ids[model::maxTasks],n=tasks(true,ids);
+    int n=tasks(true).size();
     bool idleScreen=screen==Screen::Lock || screen==Screen::Today || screen==Screen::MD ||
                     screen==Screen::Claude || screen==Screen::Panel || screen==Screen::Settings ||
                     screen==Screen::Brightness;
-    if (idleScreen && idleLimits[sleepOption] && now-lastInput>=idleLimits[sleepOption]) go(Screen::Sleep);
-    if (offlineToast && now-toastStarted>=3000) {
-        offlineToast=false;
+    if (idleScreen && !toastActive && idleLimits[sleepOption] && now-lastInput>=idleLimits[sleepOption]) go(Screen::Sleep);
+    if (toastActive && now-toastStarted>=3000) {
+        toastActive=false;
         if (toast) { lv_obj_del(toast); toast=nullptr; }
     }
     if (screen==Screen::Saved && now-entered>=2000) go(sleepAfter?Screen::Sleep:Screen::Today);
     if (screen==Screen::Lock && now-rotated>=6000 && !overlay) browse(1);
     if (screen==Screen::Picker && now-interacted>=8000 && !overlay) go(Screen::Today);
     if (screen==Screen::Today && !overlay) {
+        if (!draggingPages && !shade && int32_t(now-motionEnds)>=0 && taskNotice::take(taskToast)) {
+            toastActive=true; toastStarted=now; dirty=true;
+        }
         if (focused==n && now-interacted>=10000) { focused=0; rotated=now; dirty=true; }
         else if (!dirty && focused!=n && now-rotated>=scrollPeriod) {
-            int later[model::maxTasks], count=tasks(false,later);
+            const auto &later=tasks(false); int count=later.size();
             if (count>1) { ++ticket; slideDirection=1; updateTicker(later,count); slideDirection=0; }
             rotated=now;
         }
@@ -1158,11 +1263,25 @@ void updateView(uint32_t now) {
     }
     if (chargeChanged || levelChanged) refreshBatteryWidgets();
 }
+// Full speed while the user is acting or something on screen moves; 80 MHz once the screen is still.
+// Scrolling titles move only a few pixels per frame and stay smooth at 80 MHz.
+void chooseClock(uint32_t now) {
+    const bool busy=screen!=Screen::Sleep && (recordingActive() || dirty || overlay ||
+        draggingPages || shadeDragging || panelDragging || shadeAnimating || settingsTouch ||
+        int32_t(now-motionEnds)<0 || now-lastInput<1500 || now-rotated<500 ||
+        (settingsList && lv_obj_is_scrolling(settingsList)) || (taskList && lv_obj_is_scrolling(taskList)));
+    setLowPower(!busy);
+}
 // Display refresh rate over the last second and the slowest loop since the last `perf`.
 uint32_t measuredFps, slowestLoop;
 void measurePerformance(uint32_t now,uint32_t loopStart) {
-    static uint32_t windowStart, framesAtStart;
-    slowestLoop=max(slowestLoop,now-loopStart);
+    static uint32_t windowStart, framesAtStart, lastSlowLoop;
+    const uint32_t elapsed=now-loopStart;
+    slowestLoop=max(slowestLoop,elapsed);
+    if (elapsed>=50 && now-lastSlowLoop>=1000) {
+        diagnostics::record(diagnostics::Event::LoopSlow,elapsed);
+        lastSlowLoop=now;
+    }
     if (now-windowStart<1000) return;
     const uint32_t frames=displayFrames();
     measuredFps=(frames-framesAtStart)*1000/(now-windowStart);
@@ -1172,25 +1291,34 @@ void serialSettings() {
     static char buf[288];
     static bool overflow=false;
     static unsigned len=0;
-    while (usbSerial.available()) {
+    while (!diagnostics::exporting() && usbSerial.available()) {
         char ch=usbSerial.read();
         if (ch=='\r') continue;
         if (ch!='\n') { if (len<sizeof(buf)-1) buf[len++]=ch; else overflow=true; continue; }
         buf[len]=0; len=0;
         if (overflow) { usbSerial.println("error input too long"); overflow=false; }
+        else if (!strncmp(buf,"log ",4)) diagnostics::command(buf+4);
+        else if (!strncmp(buf,"sync ",5)) { piSync::command(buf+5,usbSerial); dirty=true; }
         else if (!strncmp(buf,"wifi ",5)) {
             campusCommand(buf+5,usbSerial);
             if (screen==Screen::Settings || screen==Screen::Panel) dirty=true;
         } else if (!strcmp(buf,"en") || !strcmp(buf,"zh")) {
             en=!strcmp(buf,"en"); prefs.putBool("english",en); dirty=true;
         } else if (!strcmp(buf,"perf")) {
-            usbSerial.printf("perf fps=%lu loop_max_ms=%lu\n",(unsigned long)measuredFps,(unsigned long)slowestLoop);
+            usbSerial.printf("perf fps=%lu loop_max_ms=%lu mhz=%lu\n",(unsigned long)measuredFps,
+                             (unsigned long)slowestLoop,(unsigned long)cpuMhz());
             slowestLoop=0;
+        } else if (!strcmp(buf,"power") || !strncmp(buf,"power ",6)) {
+            powerCommand(buf[5]?buf+6:"",usbSerial);
         } else if (!strcmp(buf,"levels")) {
             printMicLevels(usbSerial);
         } else if (!strncmp(buf,"time ",5)) {
             long seconds=atol(buf+5);
-            if (seconds>=1704067200) { timeval t{seconds,0}; settimeofday(&t,nullptr); dirty=true; }
+            if (seconds>=1704067200) {
+                timeval t{seconds,0};
+                if (settimeofday(&t,nullptr)==0) diagnostics::record(diagnostics::Event::ClockSet,seconds);
+                dirty=true;
+            }
         }
         memset(buf,0,sizeof(buf));
     }
@@ -1198,7 +1326,7 @@ void serialSettings() {
 }
 
 void setup() {
-    beginCampusDiagnostics();
+    diagnostics::begin(beginCampusDiagnostics());
     boardBegin();
     static lv_indev_drv_t touchDriver;
     lv_indev_drv_init(&touchDriver);
@@ -1219,6 +1347,8 @@ void setup() {
     savedBrightness=brightness=constrain(int(prefs.getUChar("brightness",16)),1,20);
     sleepOption=constrain(int(prefs.getUChar("sleep",1)),0,3);
     model::load();
+    piSync::begin();
+    beginPowerLog();
     battery=batteryPercent();
     isCharging=chargeSample=charging();
     chargeChangedAt=millis();
@@ -1230,6 +1360,7 @@ void setup() {
     // Reboot instead. `wifi diag` then reports where Wi-Fi code was.
     esp_task_wdt_init(15,true);
     enableLoopWDT();
+    diagnostics::startWorker();
 }
 void loop() {
     uint32_t now=millis();
@@ -1241,6 +1372,7 @@ void loop() {
         auto result=serviceRecording();
         if (result!=AudioResult::Ok) audioError(result);
     }
+    powerLogTick(now,screen!=Screen::Sleep,recordingActive());
     diagLoopPhase(2);
     pollKeys(now);
     if (screen==Screen::ReleasePower || screen==Screen::UnplugPower) {
@@ -1259,8 +1391,10 @@ void loop() {
         refreshClock();
         if (screen==Screen::Settings || screen==Screen::Panel || screen==Screen::SetClock) dirty=true;
     }
+    if (piSync::service(recordingActive(),screen==Screen::Picker)) dirty=true;
     diagLoopPhase(6);
     updateView(millis());
+    chooseClock(millis());
     diagLoopPhase(7);
     lv_timer_handler();
     diagLoopPhase(8);

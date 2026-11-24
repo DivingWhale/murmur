@@ -1,0 +1,51 @@
+filters:
+  and:
+    - 'murmur_type == "memo"'
+    - '!file.inFolder("{{ROOT}}/Archive")'
+    - '!file.inFolder("{{ROOT}}/Conflicts")'
+    - 'file.inFolder("{{ROOT}}")'
+properties:
+  note.show_on_device:
+    displayName: 在锁屏显示
+formulas:
+  memoLink: 'file.asLink(file.basename.replace(" - " + murmur_id, ""))'
+views:
+  - type: table
+    name: 全部随记
+    order:
+      - file.name
+      - show_on_device
+      - recorded_at
+      - recording
+  - type: table
+    name: 锁屏候选
+    filters:
+      and:
+        - 'show_on_device == true'
+    order:
+      - file.name
+      - show_on_device
+      - recorded_at
+  - type: table
+    name: 锁屏选择
+    order:
+      - show_on_device
+      - formula.memoLink
+    sort:
+      - property: file.basename
+        direction: ASC
+    columnSize:
+      note.show_on_device: 40
+  - type: table
+    name: 主页收藏
+    filters:
+      and:
+        - 'show_on_device == true'
+    order:
+      - show_on_device
+      - formula.memoLink
+    sort:
+      - property: file.basename
+        direction: ASC
+    columnSize:
+      note.show_on_device: 40

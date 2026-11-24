@@ -8,6 +8,11 @@
 #include "../src/campus_profile.h"
 #include "../src/campus_wifi.h"
 #include "../src/card_usb.h"
+#include "../src/diagnostics.h"
+#include "../src/power_log.h"
+#include "../src/task_notice.h"
+#include "../src/pi_sync.h"
+#include "../src/lock_notes.h"
 #include <USB.h>
 #include <Preferences.h>
 #include <lvgl.h>
@@ -66,10 +71,12 @@ bool simCharging = false;
 lv_disp_draw_buf_t drawBuffer;
 lv_disp_drv_t display;
 lv_color_t pixels[240 * 240];
+uint32_t frames = 0; // Completed refreshes, as on the board, so `perf` reports how often the screen redraws.
 void flush(lv_disp_drv_t *drv, const lv_area_t *a, lv_color_t *buf) {
     for (int y = a->y1; y <= a->y2; ++y)
         for (int x = a->x1; x <= a->x2; ++x)
             frame[y * 240 + x] = (buf++)->full;
+    if (lv_disp_flush_is_last(drv)) ++frames;
     lv_disp_flush_ready(drv);
 }
 }
@@ -84,9 +91,13 @@ void boardBegin() {
 }
 void releaseBatteryPower() {}
 void setBacklight(uint8_t percent) { backlight = percent; }
-uint32_t displayFrames() { return 0; }
-void setLowPower(bool) {}
+uint8_t backlightPercent() { return backlight; }
+uint32_t displayFrames() { return frames; }
+uint32_t simMhz = 240;
+void setLowPower(bool low) { simMhz = low ? 80 : 240; }
+uint32_t cpuMhz() { return simMhz; }
 int batteryPercent() { return simBattery; }
+int batteryMillivolts() { return 3900; }
 bool charging() { return simCharging; }
 Contact readContact(int &x, int &y) {
     if (!touching) return Contact::Released;
@@ -115,6 +126,10 @@ void printMicLevels(Print &out) { out.println("mic-speech-sim"); }
 
 // ---------------------------------------------------------------- card, Wi-Fi
 namespace { bool online = true; }
+namespace { bool pairedNotes=false, notesChanged=false; std::vector<lockNotes::Note> simNotes; }
+const std::vector<lockNotes::Note>& lockNotes::all() { return simNotes; }
+bool piSync::paired() { return pairedNotes; }
+bool piSync::service(bool,bool) { bool changed=notesChanged; notesChanged=false; return changed; }
 void beginCardUsb(USBCDC &) {}
 void takeCardForRecording() {}
 bool tryTakeCardForLocalFiles() { return true; }
@@ -128,10 +143,22 @@ void startCampusWifiAfterRecording() {}
 void stopCampusWifi() {}
 bool serviceCampusWifi() { return false; }
 void campusCommand(char *cmd, Print &out) { out.printf("wifi sim %s\n", cmd); }
-void beginCampusDiagnostics() {}
+uint32_t beginCampusDiagnostics() { return 0; }
 void diagLoopPhase(uint8_t) {}
 uint32_t campusClockHint() { return 0; }
+
+namespace diagnostics {
+void begin(uint32_t) {}
+void startWorker() {}
+void record(Event, int32_t, int32_t) {}
+void requestCheckpoint() {}
+void command(const char *) {}
+bool exporting() { return false; }
+}
 bool hasCampusProfile() { return true; }
+void beginPowerLog() {}
+void powerLogTick(uint32_t, bool, bool) {}
+void powerCommand(const char *, Print &out) { out.println("power sim"); }
 
 // ---------------------------------------------------------------- PNG output
 namespace {
@@ -253,6 +280,20 @@ int main(int argc, char **argv) {
         }
         else if (cmd == "film") { Film f; uint32_t total; in >> f.name >> total >> f.step; f.next = nowMs; f.until = nowMs + total; films.push_back(f); }
         else if (cmd == "serial") { std::string rest; std::getline(in, rest); rest.erase(0, rest.find_first_not_of(' ')); for (char c : rest) serialIn.push_back(c); serialIn.push_back('\n'); runFor(5); }
+        else if (cmd == "notice") {
+            std::string plan, due, title;
+            in >> plan >> due;
+            std::getline(in >> std::ws, title);
+            taskNotice::added(title, plan=="-"?"":plan, due=="-"?"":due);
+        }
+        else if (cmd == "lock-note") {
+            lockNotes::Note note;
+            in >> note.id >> note.stamp;
+            std::getline(in >> std::ws, note.text);
+            if (note.stamp=="-") note.stamp.clear();
+            simNotes.push_back(note); pairedNotes=notesChanged=true;
+        }
+        else if (cmd == "clear-notes") { simNotes.clear(); pairedNotes=notesChanged=true; }
         else if (cmd == "online") { int v; in >> v; online = v; }
         else if (cmd == "card") { int v; in >> v; cardPresent = v; }
         else if (cmd == "battery") { in >> simBattery; }

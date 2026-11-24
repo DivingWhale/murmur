@@ -1,6 +1,5 @@
 #include "ui_kit.h"
 #include "fonts.h"
-#include <Arduino.h>
 #include <cmath>
 
 namespace ui {
@@ -64,11 +63,11 @@ void fade(lv_obj_t *obj,lv_opa_t from,int ms) {
     lv_anim_set_values(&a,from,LV_OPA_COVER); lv_anim_set_time(&a,ms);
     lv_anim_set_path_cb(&a,lv_anim_path_ease_out); lv_anim_start(&a);
 }
-// A screen enters 40 px from its direction of travel while fading in from 20% (CSS pgL/pgR/pgU/pgD).
+// A screen enters 40 px from its direction of travel while fading in from 20% (CSS pgL/pgR/pgU).
 int enter(lv_obj_t *obj,Motion motion) {
-    const bool vertical=motion==Motion::Up || motion==Motion::Down;
-    const int ms=motion==Motion::Up?300:(motion==Motion::Down?280:260);
-    translate(obj,motion==Motion::Down || motion==Motion::Right?-40:40,0,vertical,ms);
+    const bool vertical=motion==Motion::Up;
+    const int ms=vertical?300:260;
+    translate(obj,motion==Motion::Right?-40:40,0,vertical,ms);
     fade(obj,LV_OPA_20,ms);
     return ms;
 }

@@ -1,4 +1,5 @@
 #include "board.h"
+#include <Arduino.h>
 #include <Wire.h>
 #include <driver/spi_master.h>
 #include <esp_heap_caps.h>
@@ -17,6 +18,7 @@ esp_lcd_panel_io_handle_t panel;
 lv_disp_draw_buf_t drawBuffer;
 lv_disp_drv_t display;
 std::atomic<uint32_t> frames{0};
+uint8_t backlightLevel;
 
 bool transferDone(esp_lcd_panel_io_handle_t, esp_lcd_panel_io_event_data_t *, void *driver) {
     lv_disp_flush_ready(static_cast<lv_disp_drv_t *>(driver)); // ISR-safe: only sets a flag.
@@ -94,13 +96,19 @@ void setLowPower(bool low) {
     const uint32_t mhz=low?80:240;
     if (getCpuFrequencyMhz()!=mhz) setCpuFrequencyMhz(mhz);
 }
-void setBacklight(uint8_t percent) { ledcWrite(0,(percent*255+50)/100); }
+uint32_t cpuMhz() { return getCpuFrequencyMhz(); }
+void setBacklight(uint8_t percent) {
+    backlightLevel=percent;
+    ledcWrite(0,(percent*255+50)/100);
+}
+uint8_t backlightPercent() { return backlightLevel; }
 void releaseBatteryPower() { digitalWrite(batteryEnable, LOW); }
 bool charging() { return digitalRead(3) == LOW; }
+int batteryMillivolts() { return analogReadMilliVolts(1)*3; } // 1:3 divider on GPIO1
 int batteryPercent() {
     static const int mv[] = {3200,3400,3500,3600,3700,3770,3850,3950,4060,4200};
     static const int pc[] = {0,3,8,15,30,50,65,80,92,100};
-    int v = analogReadMilliVolts(1)*3;
+    int v = batteryMillivolts();
     if (v < 2600 || v > 4500) return -1;
     for (unsigned i = 1; i < sizeof(mv)/sizeof(*mv); ++i)
         if (v <= mv[i]) return constrain(map(v,mv[i-1],mv[i],pc[i-1],pc[i]),0L,100L);

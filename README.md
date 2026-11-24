@@ -2,7 +2,9 @@
 
 *Everyday voice capture in your pocket.*
 
-Press a button, say what you want to remember, and put the device back in your pocket. A Waveshare ESP32-S3-Touch-LCD-1.54 records to microSD. A Raspberry Pi on campus turns each recording into tasks and notes, and the notes go to Obsidian. The handheld shows today's tasks and works offline.
+Press a button, say what you want to remember, and put the device back in your pocket. A Waveshare ESP32-S3-Touch-LCD-1.54 records to microSD. A Raspberry Pi on campus uses cloud speech and language models to turn recordings into tasks and notes. The handheld shows today's tasks and lock-screen note excerpts even when offline. The Obsidian bridge syncs tasks and notes and lets you choose which notes appear on the lock screen.
+
+[Project overview and recording workflow](docs/project-overview.md)
 
 ## Start here
 
@@ -11,6 +13,8 @@ Press a button, say what you want to remember, and put the device back in your p
 | Anything | [docs/product-design.md](docs/product-design.md): what the system does and why |
 | USB serial, TF card access or post-flash mounting | [USB behaviour](docs/product-design.md#usb-access-to-the-tf-card) and [hardware tests](firmware/TESTING.md) |
 | Handheld UI / firmware | [docs/ui-spec.md](docs/ui-spec.md): **source of truth** for screens, controls, sizes and text |
+| Pi voice backend, device pairing and sync | [Pi service](backend/README.md) |
+| Obsidian setup and lock-screen selection | [PC bridge](pc_bridge/README.md) |
 | Build or flash the handheld preview | [firmware/README.md](firmware/README.md) |
 | Lock-screen notes (computer ↔ Pi ↔ handheld) | [docs/lockscreen-api.md](docs/lockscreen-api.md) |
 | Claude usage page (5-hour / weekly limits) | [docs/claude-usage-api.md](docs/claude-usage-api.md) |
@@ -25,6 +29,8 @@ docs/
   lockscreen-api.md     lock-screen notes API contract
   claude-usage-api.md   Claude usage page data contract
   campus-wifi.md        campus Wi-Fi (PEAP) setup and firmware notes
+backend/                 Pi sync service, Bailian processing and SQLite storage
+pc_bridge/               Obsidian task, note and lock-screen sync
 prototype/
   index.html            interactive UI prototype (reference only)
   api/v1/               mock API responses used by the prototype
