@@ -4,7 +4,7 @@ The paired handheld sends new, finalized WAVs over the campus network. The Pi ac
 
 ## Installation
 
-Use Raspberry Pi OS with Python 3.13 or later and `ssl.HAS_PSK` enabled. Place `server.py` and `cloud.py` in `~/projects/murmur/backend/`. Create a mode-0600 `~/.config/murmur/service.env` with these two variables:
+Use Raspberry Pi OS with Python 3.13 or later and `ssl.HAS_PSK` enabled. Place `server.py`, `bridge_api.py` and `cloud.py` in `~/projects/murmur/backend/`. Create a mode-0600 `~/.config/murmur/service.env` with these two variables:
 
 - `DASHSCOPE_API_KEY` is a Beijing Bailian key permitted to call `qwen3-asr-flash` and `deepseek-v4.1-flash`.
 - `MURMUR_PSK` is a random 32-byte device pairing key encoded as 64 hexadecimal characters. Generate it once with `openssl rand -hex 32`.
@@ -23,9 +23,11 @@ On the computer with the handheld plugged into USB, run the existing project Pyt
 
 ## Use and diagnostics
 
+The optional [Obsidian PC bridge](../pc_bridge/README.md) uses a separate certificate-authenticated HTTPS listener and PC bearer credential. Its task and memo changes share the handheld database. New voice and handwritten notes start unselected. Existing favorites keep their saved selection. Changing `show_on_device` or deleting a note invalidates the handheld snapshot.
+
 Press PLUS to record and again to save. New recordings keep their WAV on the card. A sibling `.wav.send` marks an upload awaiting confirmation. Sync removes this marker after the Pi confirms the whole file. WAVs created by older firmware stay on the card. Recordings with an unset clock retain their original transcript and relative date phrases. The server leaves their scheduling fields empty.
 
-DeepSeek Flash receives the transcript and recording time with a strict JSON Schema. Its two required arrays are `tasks` and `notes`. Each task has `title`, `details`, `planned_at` and `due_at`. A note is spoken text in its original language. The Pi validates both arrays, normalizes dates and commits the results together. It generates IDs, timestamps from recording metadata and lock-screen excerpts in code. SQLite retains the full note, transcript and source audio.
+DeepSeek Flash receives the transcript and recording time with a strict JSON Schema. Its two required arrays are `tasks` and `notes`. Each task has `title`, `details`, `planned_at` and `due_at`. Each note has a short `title` based on a specific detail and a `body` preserving the speaker’s words. The Pi validates both arrays, normalizes dates and commits the results together. Obsidian uses the title as the initial filename. The lock-screen excerpt comes from the body. SQLite retains the full note, transcript and source audio.
 
 Every extracted note syncs by default. The paired handheld requests notes with its task edits, downloads changed snapshots in pages of 20 and saves them to `/murmur/notes.jsonl` on the TF card. An interrupted refresh leaves the last complete set available offline. The lock screen starts with the newest note and cycles every six seconds. A recording made without a clock shows an unknown time.
 

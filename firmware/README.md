@@ -45,6 +45,8 @@ The application uses Espressif's CDC + MSC development ID (`303A:4003`). The ROM
 
 The USB reader initially reports an empty slot. After USB configuration it waits at least four seconds before publishing the card. A background task probes the card when the host polls, so SD initialization and status checks do not run in the USB readiness or capacity callbacks. On the test PC, Windows mounted the volume about 22 seconds after the application COM port appeared. Leave the cable connected during this interval. USB mounting has not yet been tested on macOS. See [TESTING.md](TESTING.md) for update checks and the hardware log.
 
+The ESP32-S3 uses TinyUSB 0.18's DWC2 controller in buffer DMA mode for control, CDC and MSC transfers. Arduino-ESP32 2.0.17 supplies the device and class layers. PlatformIO pins the controller source and compiles it through `src/usb_dwc2.c` with its matching headers. The adapter handles the SDK's initialization signature and Arduino's unused CDC notification endpoint. The endpoint buffers live in internal SRAM. Recheck the controller ABI, endpoint layout and sustained-read test when upgrading the SDK. [TinyUSB DWC2 driver](https://github.com/hathach/tinyusb/blob/86ad6e56c1700e85f1c5678607a762cfe3aa2f47/src/portable/synopsys/dwc2/dcd_dwc2.c)
+
 If Windows loses USB and the Murmur interface still responds, hold PWR for three seconds, release it at the prompt, and unplug USB. Leave the battery installed. Reconnect USB with BOOT released to start the application again. The PWR gesture runs in Murmur firmware and is available while the application is responsive. The ROM download mode has its own recovery procedure. [Waveshare USB download instructions](https://docs.waveshare.com/ESP32-S3-Touch-LCD-1.54/Instructions-For-Use)
 
 | Board key | Preview action |
@@ -67,7 +69,21 @@ Connect a USB data cable and open the removable drive in File Explorer. Windows 
 
 Finish any file copy before starting a recording. Pressing PLUS gives the recorder exclusive use of the card, so a transfer still in progress can stop. Once recording finishes, the firmware releases the card and signals a media change to the host. Connecting USB during a recording also waits for local file closure. Refresh File Explorer after saving, or reconnect the cable after explicitly ejecting the drive.
 
-Provision HKUSTGZ once with the [USB campus login helper](../docs/campus-wifi.md#getting-credentials-onto-the-device). Online sessions automatically synchronize network time. After a fully dated login the device remembers the campus server certificate and can recover time following a cold shutdown, then reconnect with full date validation. Settings → Clock and USB provide a fallback after a certificate change. Recording and task controls work offline. After [pairing with the Pi](../backend/README.md), new recordings upload over TLS and extracted tasks sync back to a persistent card cache. Obsidian integration is pending. The Claude page shows its empty state. Sleep turns off the backlight and lowers the CPU clock.
+Provision HKUSTGZ once with the [USB campus login helper](../docs/campus-wifi.md#getting-credentials-onto-the-device). Online sessions automatically synchronize network time. After a fully dated login the device remembers the campus server certificate and can recover time following a cold shutdown, then reconnect with full date validation. Settings → Clock and USB provide a fallback after a certificate change. Recording and task controls work offline. After [pairing with the Pi](../backend/README.md), new recordings upload over TLS and extracted tasks sync back to a persistent card cache. The [Obsidian PC bridge](../pc_bridge/README.md) synchronizes tasks, memos and lock-screen selection through the Pi. The Claude page shows its empty state. Sleep turns off the backlight and lowers the CPU clock.
+
+## Battery consumption log
+
+The firmware samples battery use once a minute from the moment it starts, with no setup. Each sample records the battery voltage at the end of the minute and how many seconds of that minute were spent with the screen awake, the CPU at 240 MHz, the Wi-Fi radio on, recording, a USB host attached and charging. It also records the mean backlight level and the number of display refreshes. The last 12 hours stay in PSRAM. Every 10 minutes a summary of the run is also saved to NVS, so it survives a flat battery.
+
+Use these commands over USB serial.
+
+| Command | Reply |
+|---|---|
+| `power` | Live voltage, charge state, CPU clock, backlight and Wi-Fi, then `power run …` totals since start |
+| `power log` | CSV of the per-minute samples, ending with `power end` |
+| `power last` | Summary of the previous run (up to its last 10-minute save) and `ended_by=`, the reset reason of the current start. Check the saved voltage alongside that reason when investigating a shutdown |
+
+USB powers the board while it is attached, so drain is only meaningful in minutes with `usb_s=0` and `charge_s=0`. To measure, charge fully, unplug, and use the device normally or leave it in one state. Then either plug in and send `power log` before it dies, or let it run out and send `power last` after the next start. Voltage under load reads lower than at rest, so compare drain rates over spans of at least 10 minutes.
 
 ## Display and UI development
 
@@ -93,6 +109,7 @@ Icons are the prototype's SVG strokes, rasterized into `src/icons_data.cpp` by `
 | `src/tasks.*`, `src/pi_sync.*` | Task lists, card cache, recording uploads and Pi sync. Unpaired devices show sample data. |
 | `src/icons.*`, `src/icons_data.cpp` | Generated stroke icons |
 | `src/board.*` | Display, backlight, touch, buttons, battery |
+| `src/power_log.*` | Per-minute battery consumption log and USB serial commands |
 | `src/audio.*` | Microphone capture task and WAV writer |
 | `src/card_usb.*` | TF card sharing between recorder and USB reader |
 | `src/campus_wifi.*`, `src/campus_profile.*` | HKUSTGZ login, saved profile, clock recovery |
@@ -115,6 +132,26 @@ The helper saves a timestamped file under `work/diagnostics/` and prints its loc
 The device keeps its last 128 events in RTC memory. The *previous* section is recovered after a reset that preserves RTC memory. The *checkpoint* section is the last flash snapshot from before this boot, and *incident* holds up to 32 events leading to the latest retained watchdog or panic reset. A complete loss of power leaves the last committed flash snapshots. Each section identifies the boot and build, and event times are milliseconds since boot. `sntp.synced` and `clock.set` record the corresponding Unix timestamp in `a`.
 
 Diagnostics include stages and result codes for Wi-Fi, USB and card readiness, sleep and wake, and slow main loops. The log leaves out campus credentials, IP addresses, and recording or note content. Windows Code 43 counts describe what the host saw during an outage. Match the time and USB port when attributing an error to the handheld.
+
+For an intermittent USB loss, collect once with `--usb` after reconnecting. The serial command is `log usb`. The `usb_gap` section contains the most recently captured gap and its preceding events. The diagnostic worker samples the controller every 250 ms and saves the first gap to NVS, then limits additional saves to one per minute. Unplugging or a host suspend can also create a gap. Match its boot ID and uptime to the host observation. The ordinary `log dump` includes the most recent watchdog incident. The collector decodes the first eight characters of the task name running on each core at the watchdog interrupt.
+
+| Event | Field a | Field b |
+|---|---|---|
+| `usb.bus` | Device status register DSTS, including the received frame number and suspend bit | Device control register DCTL |
+| `usb.traffic` | Count of MSC read callbacks entered | Milliseconds since the last capacity or readiness query, or −1 before the first |
+| `usb.read` | 0 idle, 1 waiting for the card mutex, 2 holding the mutex in the read callback | Age of the in-flight callback in milliseconds |
+| `usb.gap` | Bit 0 for two seconds without advancing USB frames, bit 1 for a read callback lasting one second, bit 2 for ten seconds without a capacity or readiness query after the first | Milliseconds since the last observed frame advance |
+| `usb.irq` | Global interrupt status | Endpoint interrupt status |
+| `usb.control` | Endpoint zero IN control register | Endpoint zero OUT control register |
+| `usb.bulk_in`, `usb.bulk_out` | MSC endpoint control register for the indicated direction | Transfer-size register (remaining bytes and packets) |
+| `usb.bulk_tx` | MSC IN interrupt status | TX FIFO empty interrupt mask |
+| `usb.read_block` | Last card sector requested by MSC | Requested bytes |
+| `usb.probe_error` | SDMMC status error | Reserved |
+| `usb.media_unavailable` | Requested sector | 1 during local card ownership, 2 after eject, otherwise 0 |
+| `usb.in_stall_begin`, `usb.in_stall_end` | Active IN endpoint address | Initial interrupt status on entry, elapsed microseconds on completion |
+| `cpu.pc` | CPU 0 program counter | CPU 1 program counter |
+
+The ESP32-S3 Debug Assistant samples the program counters. A USB gap transition records one pair. The task-watchdog interrupt saves three pairs to RTC memory. Use the ELF from the build ID in the same log section to resolve the addresses with `xtensa-esp32s3-elf-addr2line -pfiaC -e firmware.elf`.
 
 ## Fonts
 

@@ -9,6 +9,7 @@
 #include "../src/campus_wifi.h"
 #include "../src/card_usb.h"
 #include "../src/diagnostics.h"
+#include "../src/power_log.h"
 #include "../src/task_notice.h"
 #include "../src/pi_sync.h"
 #include "../src/lock_notes.h"
@@ -89,7 +90,11 @@ void boardBegin() {
 void releaseBatteryPower() {}
 void setBacklight(uint8_t percent) { backlight = percent; }
 uint32_t displayFrames() { return 0; }
-void setLowPower(bool) {}
+uint8_t backlightPercent() { return backlight; }
+namespace { uint32_t simMhz = 240; }
+void setLowPower(bool low) { simMhz = low ? 80 : 240; }
+uint32_t cpuMhz() { return simMhz; }
+int batteryMillivolts() { return 3900; }
 int batteryPercent() { return simBattery; }
 bool charging() { return simCharging; }
 Contact readContact(int &x, int &y) {
@@ -149,6 +154,9 @@ void command(const char *) {}
 bool exporting() { return false; }
 }
 bool hasCampusProfile() { return true; }
+void beginPowerLog() {}
+void powerLogTick(uint32_t, bool, bool) {}
+void powerCommand(const char *, Print &out) { out.println("power sim"); }
 
 // ---------------------------------------------------------------- PNG output
 namespace {

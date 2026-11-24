@@ -1,6 +1,6 @@
 # Lock Screen Notes — API Contract
 
-The paired handheld cycles through all recorded miscellaneous notes by default. The Pi and handheld use their existing TLS sync connection. Computer-side selection and the prototype endpoints below describe a future integration.
+The paired handheld cycles through notes selected on the Pi. Recorded and manual notes start with lock-screen display enabled. The Obsidian bridge edits the boolean `show_on_device` through the PC edit endpoint. Toggling it updates the Pi snapshot version, including when the selection becomes empty. The Pi and handheld use their existing TLS sync connection. [PC bridge setup and API](../pc_bridge/README.md)
 
 ## Deployed Pi and handheld protocol
 
@@ -8,7 +8,7 @@ The handheld sends `POST /v1/sync` with `edits`, `notes_version` and `notes_afte
 
 The Pi keeps the full note and cuts display excerpts at 88 display units using the rules below. The handheld caches the complete snapshot and browses it newest ID first. A failed download keeps the previous cache. The screen rotates every six seconds and retains the visible ID across updates when possible.
 
-## Future computer selection and prototype API
+## Historical prototype API
 
 ```
 Computer (Obsidian vault)  --PUT /v1/lockscreen-->  Raspberry Pi  <--GET /v1/lockscreen--  Handheld
@@ -22,7 +22,7 @@ Computer (Obsidian vault)  --PUT /v1/lockscreen-->  Raspberry Pi  <--GET /v1/loc
 |---|---|---|
 | Lock screen UI + prototype | `prototype/index.html` | Done. Loads notes from the mock below. |
 | Mock response | `prototype/api/v1/lockscreen.json` | Static file. The real `GET` must return this shape. |
-| Computer-side selection | — | **To build** |
+| Computer-side selection | `pc_bridge/`, `backend/bridge_api.py` | Implemented with incremental per-note edits over HTTPS. |
 | Prototype GET and computer PUT | — | Proposed. The paired handheld uses `POST /v1/sync` above. |
 
 To point the prototype at a real Pi, change `API_BASE` in `prototype/index.html`.
@@ -87,7 +87,7 @@ Headers: `Authorization: Bearer <device token>`, `If-None-Match: <version it has
 
 ## Limits the Pi should enforce
 
-- The proposed computer-selected set holds at most **20 notes**. The deployed speech-note feed sends all notes, 20 per page. `interval_s` from 3 to 60, default 6.
+- The proposed computer-selected set holds at most **20 notes**. The deployed feed sends only notes selected for the lock screen, 20 per page. `interval_s` from 3 to 60, default 6.
 - `excerpt` must be ≤ 88 **display units** after stripping Markdown. If it's longer, either reject it or cut it and add "…". Pick one approach and document it.
 
 ### Chinese and mixed text

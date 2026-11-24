@@ -2,7 +2,9 @@
 
 *Everyday voice capture in your pocket.*
 
-Press a button, say what you want to remember, and put the device back in your pocket. A Waveshare ESP32-S3-Touch-LCD-1.54 records to microSD. A Raspberry Pi on campus turns each recording into tasks and notes, and the notes go to Obsidian. The handheld shows today's tasks and works offline.
+Press a button, say what you want to remember, and put the device back in your pocket. A Waveshare ESP32-S3-Touch-LCD-1.54 records to microSD. A Raspberry Pi on campus uses cloud speech and language models to turn recordings into tasks and notes. The handheld shows today's tasks and lock-screen note excerpts even when offline. Obsidian export is planned.
+
+[Project overview and recording workflow](docs/project-overview.md)
 
 ## Start here
 

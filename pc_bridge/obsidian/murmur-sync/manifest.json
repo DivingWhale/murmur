@@ -1,0 +1,9 @@
+{
+  "id": "murmur-sync",
+  "name": "Murmur",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "将当前 Vault 的修改提交到树莓派，供 Murmur 掌机下次同步时获取。",
+  "author": "Murmur",
+  "isDesktopOnly": true
+}

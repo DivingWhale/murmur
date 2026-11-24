@@ -10,6 +10,9 @@
 #include <diskio_sdmmc.h>
 #include <atomic>
 #include <memory>
+#include <soc/usb_reg.h>
+#include <soc/usb_struct.h>
+#include <soc/assist_debug_reg.h>
 
 namespace {
 SemaphoreHandle_t gate;
@@ -17,6 +20,10 @@ TaskHandle_t probeTask;
 sdmmc_card_t card;
 bool rawOpen, recording, ejected, usbConnected;
 std::atomic<uint32_t> visibleBlocks{0}, mediumChanged{0};
+std::atomic<uint32_t> lastHostPoll{0}, readCount{0}, readStage{0}, readStarted{0};
+std::atomic<uint32_t> lastReadLba{0}, lastReadSize{0};
+uint8_t mscEndpoint;
+bool controllerStarted;
 uint32_t retryAt, lastProbe, usbAttachedAt;
 alignas(4) uint8_t sector[512];
 
@@ -55,7 +62,9 @@ bool ready() {
     uint32_t now=millis();
     if (rawOpen && now-lastProbe>=1000) {
         lastProbe=now;
-        if (sdmmc_get_status(&card)!=ESP_OK) {
+        const esp_err_t err=sdmmc_get_status(&card);
+        if (err!=ESP_OK) {
+            diagnostics::record(diagnostics::Event::UsbProbeError,err);
             closeRaw();
             mediumChanged=true;
             retryAt=now+1200;
@@ -69,6 +78,7 @@ bool ready() {
 uint16_t descriptor(uint8_t *dst,uint8_t *interfaceNumber) {
     uint8_t ep=tinyusb_get_free_duplex_endpoint();
     if (!ep) return 0;
+    mscEndpoint=ep;
     uint8_t str=tinyusb_add_string_descriptor("Murmur TF card");
     uint8_t bytes[]={TUD_MSC_DESCRIPTOR(*interfaceNumber,str,ep,uint8_t(0x80|ep),64)};
     ++*interfaceNumber;
@@ -79,6 +89,9 @@ void connectionEvent(void *,esp_event_base_t,int32_t id,void *) {
     const bool attached=id==ARDUINO_USB_STARTED_EVENT;
     diagnostics::record(attached?diagnostics::Event::UsbAttached:diagnostics::Event::UsbDetached);
     CardLock lock;
+    // A host can configure the same reader again while recovering a transfer.
+    // Its already-probed medium remains available across that bus reset.
+    if (attached && usbConnected && !ejected) return;
     ejected=false;
     usbConnected=attached;
     visibleBlocks.store(0);
@@ -100,6 +113,7 @@ void probeMedia(void *) {
 uint32_t mediaCapacity() {
     // A card can take seconds to initialize. Keep the USB control and CDC
     // endpoints responsive while Windows polls this removable reader.
+    lastHostPoll.store(millis(),std::memory_order_relaxed);
     xTaskNotifyGive(probeTask);
     return visibleBlocks.load();
 }
@@ -113,12 +127,18 @@ void beginCardUsb(USBCDC &serial) {
         tinyusb_enable_interface(USB_INTERFACE_MSC,TUD_MSC_DESC_LEN,descriptor);
     }
     serial.setRxBufferSize(512);
+    auto powerEvent=[](void *,esp_event_base_t,int32_t id,void *) {
+        diagnostics::record(id==ARDUINO_USB_SUSPEND_EVENT?diagnostics::Event::UsbSuspend:diagnostics::Event::UsbResume);
+    };
+    USB.onEvent(ARDUINO_USB_SUSPEND_EVENT,powerEvent);
+    USB.onEvent(ARDUINO_USB_RESUME_EVENT,powerEvent);
     serial.begin(115200);
     // Espressif's TinyUSB development PID bitmap: CDC bit 0, MSC bit 1.
     // The ROM's 0x1001 identifies a different set of interfaces (Serial/JTAG).
     USB.PID(probeTask ? 0x4003 : 0x4001);
     USB.productName("Murmur");
     if (USB.begin()) {
+        controllerStarted=true;
         // Give the host a detach interval between the ROM USB controller and TinyUSB.
         tud_disconnect();
         delay(750);
@@ -127,6 +147,54 @@ void beginCardUsb(USBCDC &serial) {
 }
 void takeCardForRecording() {
     tryTakeCardForLocalFiles();
+}
+
+bool sampleUsbProgress(uint32_t now) {
+    using diagnostics::Event;
+    static uint32_t sampled, lastFrame, frameChanged, reported, lastGap;
+    static bool sawFrames;
+    if (!controllerStarted || now-sampled<250) return false;
+    sampled=now;
+    const uint32_t status=USB0.dsts;
+    const uint32_t frame=(status>>USB_SOFFN_S)&USB_SOFFN_V;
+    if (frame!=lastFrame) {
+        frameChanged=now;
+        lastFrame=frame;
+        sawFrames=true;
+    }
+    if (!sawFrames) return false;
+    const uint32_t poll=lastHostPoll.load();
+    const uint32_t stage=readStage.load();
+    const uint32_t started=readStarted.load();
+    // A read can start after the worker captured now.
+    const uint32_t readAge=stage && int32_t(now-started)>0?now-started:0;
+    const int32_t pollAge=poll?std::max<int32_t>(0,int32_t(now-poll)):-1;
+    const uint32_t gap=(now-frameChanged>=2000?1u:0u) |
+                       (readAge>=1000?2u:0u) |
+                       (pollAge>=10000?4u:0u);
+    if (gap==lastGap && (gap || now-reported<10000)) return false;
+    diagnostics::record(Event::UsbBus,status,USB0.dctl);
+    diagnostics::record(Event::UsbTraffic,readCount.load(),pollAge);
+    diagnostics::record(Event::UsbRead,stage,readAge);
+    const bool newGap=(gap & ~lastGap)!=0;
+    if (gap!=lastGap) {
+        diagnostics::record(Event::UsbGap,gap,now-frameChanged);
+        diagnostics::record(Event::UsbIrq,USB0.gintsts,USB0.daint);
+        diagnostics::record(Event::UsbControl,USB0.in_ep_reg[0].diepctl,USB0.out_ep_reg[0].doepctl);
+        if (mscEndpoint) {
+            const auto &in=USB0.in_ep_reg[mscEndpoint];
+            const auto &out=USB0.out_ep_reg[mscEndpoint];
+            diagnostics::record(Event::UsbBulkIn,in.diepctl,in.dieptsiz);
+            diagnostics::record(Event::UsbBulkTx,in.diepint,USB0.dtknqr4_fifoemptymsk);
+            diagnostics::record(Event::UsbBulkOut,out.doepctl,out.doeptsiz);
+            diagnostics::record(Event::UsbReadBlock,lastReadLba.load(),lastReadSize.load());
+        }
+        diagnostics::record(Event::CpuPc,REG_READ(ASSIST_DEBUG_CORE_0_RCD_PDEBUGPC_REG),
+                             REG_READ(ASSIST_DEBUG_CORE_1_RCD_PDEBUGPC_REG));
+    }
+    lastGap=gap;
+    reported=now;
+    return newGap;
 }
 bool tryTakeCardForLocalFiles() {
     if (!gate) return false;
@@ -190,8 +258,16 @@ int32_t tud_msc_write10_cb(uint8_t lun,uint32_t,uint32_t,uint8_t *,uint32_t) {
     return -1;
 }
 int32_t tud_msc_read10_cb(uint8_t lun,uint32_t lba,uint32_t offset,void *buffer,uint32_t length) {
+    readStarted.store(millis());
+    lastReadLba.store(lba+offset/sizeof(sector),std::memory_order_relaxed);
+    lastReadSize.store(length,std::memory_order_relaxed);
+    readCount.fetch_add(1,std::memory_order_relaxed);
+    readStage.store(1); // Waiting for the card mutex.
+    struct ReadFinished { ~ReadFinished() { readStage.store(0); } } finished;
     CardLock lock;
+    readStage.store(2); // Holds the card mutex, including the SDMMC transfer.
     if (!rawOpen || !visibleBlocks.load()) {
+        diagnostics::record(diagnostics::Event::UsbMediaUnavailable,lba,recording?1:ejected?2:0);
         tud_msc_set_sense(lun,SCSI_SENSE_NOT_READY,0x3a,0);
         return -1;
     }

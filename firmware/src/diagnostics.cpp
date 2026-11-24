@@ -1,4 +1,5 @@
 #include "diagnostics.h"
+#include "card_usb.h"
 #include <Arduino.h>
 #include <esp32-hal-tinyusb.h>
 #include <esp_crc.h>
@@ -6,6 +7,8 @@
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <nvs.h>
+#include <soc/assist_debug_reg.h>
+#include <soc/system_reg.h>
 #include <algorithm>
 #include <atomic>
 #include <stddef.h>
@@ -61,12 +64,19 @@ struct Ring {
 };
 
 RTC_NOINIT_ATTR Ring ring;
+struct WatchdogCapture {
+    uint32_t boot, uptime, names[2][2];
+    uint32_t pc[3][2];
+    uint32_t valid;
+};
+RTC_NOINIT_ATTR WatchdogCapture watchdog;
+constexpr uint32_t watchdogMagic=0x57445432;
 portMUX_TYPE ringLock=portMUX_INITIALIZER_UNLOCKED;
 Snapshot<ringSize> previous, current;
-SavedSnapshot previousCheckpoint, lastIncident;
+SavedSnapshot previousCheckpoint, lastIncident, lastUsbGap;
 TaskHandle_t worker;
 std::atomic<bool> checkpointRequested{true};
-enum class Request { None, Status, Dump, Invalid };
+enum class Request { None, Status, Dump, Usb, Invalid };
 std::atomic<Request> request{Request::None};
 
 const char *eventName(Event event) {
@@ -98,6 +108,24 @@ const char *eventName(Event event) {
     case Event::WifiDisconnect: return "wifi.disconnect";
     case Event::WifiEapDisabled: return "wifi.eap_disabled";
     case Event::WifiRadioOff: return "wifi.radio_off";
+    case Event::UsbSuspend: return "usb.suspend";
+    case Event::UsbResume: return "usb.resume";
+    case Event::UsbBus: return "usb.bus";
+    case Event::UsbTraffic: return "usb.traffic";
+    case Event::UsbRead: return "usb.read";
+    case Event::UsbGap: return "usb.gap";
+    case Event::WatchdogTask: return "wdt.task";
+    case Event::UsbIrq: return "usb.irq";
+    case Event::UsbControl: return "usb.control";
+    case Event::CpuPc: return "cpu.pc";
+    case Event::UsbInStallBegin: return "usb.in_stall_begin";
+    case Event::UsbInStallEnd: return "usb.in_stall_end";
+    case Event::UsbBulkIn: return "usb.bulk_in";
+    case Event::UsbBulkTx: return "usb.bulk_tx";
+    case Event::UsbBulkOut: return "usb.bulk_out";
+    case Event::UsbReadBlock: return "usb.read_block";
+    case Event::UsbProbeError: return "usb.probe_error";
+    case Event::UsbMediaUnavailable: return "usb.media_unavailable";
     }
     return "unknown";
 }
@@ -187,7 +215,7 @@ bool sendSnapshot(Export &out, const char *name, const Snapshot<Capacity> &snaps
 
 bool exportLogs(Request pending) {
     Export out;
-    if (pending==Request::Invalid) return out.send("log error expected status or dump\n");
+    if (pending==Request::Invalid) return out.send("log error expected status, dump or usb\n");
     copyRecent(current);
     char line[128];
     if (pending==Request::Status) {
@@ -195,6 +223,11 @@ bool exportLogs(Request pending) {
                  (unsigned long)current.session.boot,current.count,previous.count,
                  previousCheckpoint.log.count,lastIncident.log.count);
         return out.send(line);
+    }
+    if (pending==Request::Usb) {
+        snprintf(line,sizeof(line),"log end count=%u\n",lastUsbGap.log.count+current.count);
+        return out.send("log begin version=1\n") && sendSnapshot(out,"usb_gap",lastUsbGap.log) &&
+               sendSnapshot(out,"current",current) && out.send(line);
     }
     unsigned count=previousCheckpoint.log.count+lastIncident.log.count+previous.count+current.count;
     snprintf(line,sizeof(line),"log end count=%u\n",count);
@@ -215,6 +248,7 @@ void runWorker(void *) {
     if (storage==ESP_OK) {
         load(nvs,"checkpoint",1,previousCheckpoint);
         load(nvs,"incident",2,lastIncident);
+        load(nvs,"usb-gap",3,lastUsbGap);
         if (previous.count && isCrash(previous.reset)) {
             SavedSnapshot incident{};
             auto &dest=incident.log;
@@ -229,6 +263,8 @@ void runWorker(void *) {
 
     uint32_t lastCheckpoint=0;
     bool attemptedCheckpoint=false;
+    bool gapPending=false;
+    uint32_t gapSavedAt=0;
     for (;;) {
         const Request pending=request.load();
         if (pending!=Request::None) {
@@ -236,6 +272,15 @@ void runWorker(void *) {
             request.store(Request::None);
         }
         const uint32_t now=millis();
+        if (sampleUsbProgress(now)) {
+            copyRecent(lastUsbGap.log);
+            gapPending=true;
+        }
+        if (storage==ESP_OK && gapPending && (!gapSavedAt || now-gapSavedAt>=60000)) {
+            save(nvs,"usb-gap",3,lastUsbGap);
+            gapSavedAt=now;
+            gapPending=false;
+        }
         const bool due=attemptedCheckpoint?now-lastCheckpoint>=checkpointIntervalMs:now>=firstCheckpointMs;
         if (storage==ESP_OK && due && checkpointRequested.exchange(false)) {
             SavedSnapshot checkpoint{};
@@ -249,13 +294,52 @@ void runWorker(void *) {
 }
 }
 
+// IDF invokes this hook from the watchdog ISR. Only touch RTC RAM here.
+// These are the tasks running at the interrupt, not necessarily the overdue tasks.
+extern "C" void IRAM_ATTR esp_task_wdt_isr_user_handler() {
+    watchdog.valid=0;
+    watchdog.boot=ring.session.boot;
+    watchdog.uptime=xTaskGetTickCountFromISR()*portTICK_PERIOD_MS;
+    for (auto &pair:watchdog.pc) {
+        pair[0]=REG_READ(ASSIST_DEBUG_CORE_0_RCD_PDEBUGPC_REG);
+        pair[1]=REG_READ(ASSIST_DEBUG_CORE_1_RCD_PDEBUGPC_REG);
+    }
+    for (int core=0; core<2; ++core) {
+        auto handle=xTaskGetCurrentTaskHandleForCPU(core);
+        const char *name=handle?pcTaskGetName(handle):nullptr;
+        watchdog.names[core][0]=watchdog.names[core][1]=0;
+        for (int i=0; name && i<8 && name[i]; ++i)
+            watchdog.names[core][i/4]|=uint32_t(uint8_t(name[i]))<<(8*(i%4));
+    }
+    __atomic_store_n(&watchdog.valid,watchdogMagic,__ATOMIC_RELEASE);
+}
+
 void begin(uint32_t previousPhase) {
     const esp_reset_reason_t reason=esp_reset_reason();
     if (reason!=ESP_RST_POWERON && ring.magic==ringMagic) {
+        if (reason==ESP_RST_TASK_WDT && watchdog.valid==watchdogMagic && watchdog.boot==ring.session.boot) {
+            // The old session is no longer running. Append before copying its incident.
+            for (uint8_t core=0; core<2; ++core) {
+                const uint32_t seq=++ring.last;
+                ring.records[(seq-1)%ringSize]={seq,watchdog.uptime,int32_t(watchdog.names[core][0]),
+                    int32_t(watchdog.names[core][1]),Event::WatchdogTask,core,0};
+            }
+            for (const auto &pair:watchdog.pc) {
+                const uint32_t seq=++ring.last;
+                ring.records[(seq-1)%ringSize]={seq,watchdog.uptime,int32_t(pair[0]),int32_t(pair[1]),Event::CpuPc,0,0};
+            }
+        }
         copyRecent(previous);
         previous.reset=reason;
         previous.phase=previousPhase;
     }
+    watchdog.valid=0;
+    REG_SET_BIT(SYSTEM_CPU_PERI_CLK_EN_REG,SYSTEM_CLK_EN_ASSIST_DEBUG);
+    REG_CLR_BIT(SYSTEM_CPU_PERI_RST_EN_REG,SYSTEM_RST_EN_ASSIST_DEBUG);
+    REG_WRITE(ASSIST_DEBUG_CORE_0_RCD_PDEBUGENABLE_REG,1);
+    REG_WRITE(ASSIST_DEBUG_CORE_0_RCD_RECORDING_REG,1);
+    REG_WRITE(ASSIST_DEBUG_CORE_1_RCD_PDEBUGENABLE_REG,1);
+    REG_WRITE(ASSIST_DEBUG_CORE_1_RCD_RECORDING_REG,1);
     ring.magic=0;
     ring.session.boot=esp_random();
     memcpy(ring.session.build,esp_ota_get_app_description()->app_elf_sha256,sizeof(ring.session.build));
@@ -286,6 +370,7 @@ void command(const char *name) {
     if (!worker) return;
     if (!strcmp(name,"status")) request.store(Request::Status);
     else if (!strcmp(name,"dump")) request.store(Request::Dump);
+    else if (!strcmp(name,"usb")) request.store(Request::Usb);
     else request.store(Request::Invalid);
 }
 

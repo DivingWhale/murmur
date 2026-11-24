@@ -10,6 +10,9 @@ enum class Event : uint16_t {
     WifiProfile, WifiJoin, WifiJoinError, WifiLinkUp, WifiLinkDown, WifiGotIp,
     WifiFailed, SntpQueued, SntpStarted, SntpSynced, SntpStopped,
     WifiStopBegin, WifiDisconnect, WifiEapDisabled, WifiRadioOff,
+    UsbSuspend, UsbResume, UsbBus, UsbTraffic, UsbRead, UsbGap, WatchdogTask, UsbIrq, UsbControl, CpuPc,
+    UsbInStallBegin, UsbInStallEnd,
+    UsbBulkIn, UsbBulkTx, UsbBulkOut, UsbReadBlock, UsbProbeError, UsbMediaUnavailable,
 };
 
 void begin(uint32_t previousPhase);

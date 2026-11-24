@@ -21,7 +21,7 @@ class VoiceSyncTest(unittest.TestCase):
             self.assertIsNone(fetch(empty["version"]))
             with server.database() as db:
                 db.execute("INSERT INTO recordings(name,size) VALUES('sample',0)")
-                db.executemany("INSERT INTO notes(source,body) VALUES('sample',?)", [("随记 " + str(i),) for i in range(24)])
+                db.executemany("INSERT INTO notes(source,body,show_on_device) VALUES('sample',?,1)", [("随记 " + str(i),) for i in range(24)])
             first = fetch(empty["version"])
             self.assertTrue(first["more"])
             last = fetch(first["version"], first["items"][-1][0])
@@ -40,10 +40,17 @@ class VoiceSyncTest(unittest.TestCase):
         self.assertEqual(server.excerpt("一" * 43 + "，。再见"), "一" * 42 + "…")
         self.assertEqual(server.excerpt("一" * 42 + " English"), "一" * 42 + "…")
         self.assertEqual(server.excerpt("Cafe\u0301\n 有风。"), "Café 有风。")
-        with patch.object(cloud, "chat", return_value='{"tasks":[],"notes":[" 随记 "]}') as chat:
-            self.assertEqual(cloud.extract("随记",None), ([], ["随记"]))
-            self.assertTrue(chat.call_args.kwargs["response_format"]["json_schema"]["strict"])
-        for invalid in ({"tasks": [], "notes": [" "]}, {"tasks": [{"title": "买书"}], "notes": []},
+        output = {"tasks": [], "notes": [{"title": " 雨里的长椅 ", "body": " 公园那张长椅淋湿了。 "}]}
+        with patch.object(cloud, "chat", return_value=json.dumps(output)) as chat:
+            self.assertEqual(cloud.extract("公园那张长椅淋湿了。", None), ([], [("雨里的长椅", "公园那张长椅淋湿了。")]))
+            fmt = chat.call_args.kwargs["response_format"]["json_schema"]
+            self.assertTrue(fmt["strict"])
+            self.assertEqual(set(fmt["schema"]["properties"]["notes"]["items"]["required"]), {"title", "body"})
+        for invalid in ({"tasks": [], "notes": ["原话"]}, {"tasks": [], "notes": [{"body": "原话"}]},
+                        {"tasks": [], "notes": [{"title": " ", "body": "原话"}]},
+                        {"tasks": [], "notes": [{"title": "一\n二", "body": "原话"}]},
+                        {"tasks": [], "notes": [{"title": "标题", "body": ""}]},
+                        {"tasks": [{"title": "买书"}], "notes": []},
                         {"tasks": [], "notes": [], "extra": True}):
             with patch.object(cloud, "chat", return_value=json.dumps(invalid)), self.assertRaises(ValueError):
                 cloud.extract("文字", None)
@@ -70,12 +77,15 @@ class VoiceSyncTest(unittest.TestCase):
             with patch.object(server.cloud, "transcribe", return_value="明天还书") as asr:
                 with patch.object(server.cloud, "extract", side_effect=TimeoutError), self.assertRaises(TimeoutError):
                     server.process(record())
-                with patch.object(server.cloud, "extract", return_value=([("还书", "", "2026-11-24", None)], ["原文"])):
+                with patch.object(server.cloud, "extract", return_value=([("还书", "", "2026-11-24", None)], [("书里的落叶", "原文")])):
                     queued = record()
                     server.process(queued)
                     server.process(queued)
                 asr.assert_called_once()
             self.assertEqual(record()["state"], "ready")
+            with server.database() as db:
+                self.assertEqual([tuple(r) for r in db.execute("SELECT title,body FROM notes")], [("书里的落叶", "原文")])
+            self.assertEqual(server.sync({"edits": [], "notes_after": 0, "notes_version": ""})["notes"]["items"], [])
             task, = server.sync([])["tasks"]
             self.assertEqual(server.sync([[task[0], 1, 1]])["tasks"][0][-2:], [1, 1])
             self.assertEqual(server.sync([[task[0], 1, 1]])["tasks"][0][-2:], [1, 1])

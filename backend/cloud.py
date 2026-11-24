@@ -19,13 +19,18 @@ PROMPT = """为 Murmur 整理口述，输出 JSON 对象 {"tasks":[],"notes":[]}
 只用录音时间解释相对日期；时间未知时保留原话，不猜日期。不明确的日期填 null。
 计划哪天做与截止日期要分开。需要找人确认的日期不能当作截止日期。
 语音只创建新待办，要求调整已有安排时保留原意为一条待处理事项。
-notes 是字符串数组，保留随记、观察和感想的原话。有任务又有感想时两者都保留。
+每条随记放入 notes，包含 title 和 body。body 保留说话人表达观察和感想的原话。
+读完整条随记，再用原话的语言拟一个自然的短标题，让人过几天还能认出这件事。
+优先写最有辨识度的场景、动作或细节。中文标题通常 4 到 14 个字，像给自己的笔记命名。
+避开“今天我想记录一下”等开场白和“生活感悟”等泛称。不要添加原话里没有的事实或感受。
+标题单独放在 title 中，正文里只放原话。有任务又有感想时两者都保留。
 只有噪声、无语义或空文本时两个数组都为空。不编造任务。
 同一条新任务中，说话人明确改口时，以最后确认的说法替换前值。标题、计划时间、截止时间和详情只保留仍然有效的信息。普通否定和两个独立安排各按原意保留；details 只写执行所需的补充，没有则填 null。"""
 
 TEXT = {"type": "string"}
 OPTIONAL_TEXT = {"type": ["string", "null"]}
 TASK_FIELDS = {"title": TEXT, "details": OPTIONAL_TEXT, "planned_at": OPTIONAL_TEXT, "due_at": OPTIONAL_TEXT}
+NOTE_FIELDS = {"title": TEXT, "body": TEXT}
 
 
 def fixed_object(fields):
@@ -35,7 +40,7 @@ def fixed_object(fields):
 EXTRACTION_FORMAT = {"type": "json_schema", "json_schema": {
     "name": "murmur_extract", "strict": True, "schema": fixed_object({
         "tasks": {"type": "array", "items": fixed_object(TASK_FIELDS)},
-        "notes": {"type": "array", "items": TEXT},
+        "notes": {"type": "array", "items": fixed_object(NOTE_FIELDS)},
     }),
 }}
 
@@ -86,8 +91,7 @@ def extract(text, recorded_at):
     if not isinstance(data, dict) or set(data) != {"tasks", "notes"}:
         raise ValueError("unexpected extraction fields")
     tasks, notes = data["tasks"], data["notes"]
-    if (not isinstance(tasks, list) or not isinstance(notes, list)
-            or not all(isinstance(n, str) and n.strip() and "\x00" not in n for n in notes)):
+    if not isinstance(tasks, list) or not isinstance(notes, list):
         raise ValueError("unexpected extraction schema")
     rows = []
     for t in tasks:
@@ -100,4 +104,13 @@ def extract(text, recorded_at):
             raise ValueError("missing task title")
         rows.append((title, details, clean_time(t.get("planned_at"), recorded_at),
                      clean_time(t.get("due_at"), recorded_at)))
-    return rows, [n.strip() for n in notes]
+    memo_rows = []
+    for note in notes:
+        if (not isinstance(note, dict) or note.keys() != NOTE_FIELDS.keys()
+                or any(not isinstance(v, str) or not v.strip() or "\x00" in v for v in note.values())):
+            raise ValueError("invalid note fields")
+        title = note["title"].strip()
+        if len(title.splitlines()) != 1:
+            raise ValueError("multiline note title")
+        memo_rows.append((title, note["body"].strip()))
+    return rows, memo_rows

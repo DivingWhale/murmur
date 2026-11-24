@@ -14,7 +14,7 @@ from serial.tools import list_ports
 
 STATUS = re.compile(r"log status version=1 boot=([0-9a-f]{8})\b.*")
 SOURCE = re.compile(
-    r"log source=(checkpoint|incident|previous|current) boot=([0-9a-f]{8}) "
+    r"log source=(checkpoint|incident|previous|current|usb_gap) boot=([0-9a-f]{8}) "
     r"build=[0-9a-f]{16} reset=\d+ phase=\d+ wifi_step=\d+ count=(\d+)"
 )
 EVENT = re.compile(r"log seq=\d+ ms=\d+ core=\d+ event=[a-z_.]+ a=-?\d+ b=-?\d+")
@@ -51,8 +51,8 @@ def get_status(port):
     raise TimeoutError("The device did not answer log status")
 
 
-def read_dump(port):
-    port.write(b"log dump\n")
+def read_dump(port, usb=False):
+    port.write(b"log usb\n" if usb else b"log dump\n")
     records = []
     started = False
     count = remaining = 0
@@ -130,9 +130,16 @@ def run(args, output):
                     time.sleep(0.2)
                     port.reset_input_buffer()
                     if boot is None or get_status(port) != boot:
-                        boot, records = read_dump(port)
+                        boot, records = read_dump(port, args.usb)
                         host(f"collected boot {boot} on {name}")
                         output.write("\n".join(records) + "\n")
+                        for line in records:
+                            if " event=wdt.task " in line:
+                                fields = dict(field.split("=", 1) for field in line.split()[1:])
+                                packed = b"".join(int(fields[key]).to_bytes(4, "little", signed=True)
+                                                  for key in ("a", "b"))
+                                task = packed.split(b"\0", 1)[0].decode("ascii", errors="replace")
+                                host(f"watchdog interrupted CPU {fields['core']} running {task}")
                         output.flush()
                     previous_error = None
                 if not args.watch:
@@ -159,6 +166,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", help="Use a specific serial port")
     parser.add_argument("--watch", action="store_true", help="Collect again after a reboot or reconnect")
+    parser.add_argument("--usb", action="store_true", help="Read the last saved USB traffic gap and current events")
     parser.add_argument("--out", type=Path, help="Append to this file")
     args = parser.parse_args()
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")

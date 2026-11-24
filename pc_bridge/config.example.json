@@ -1,0 +1,11 @@
+{
+  "vault": "C:/Users/you/Documents/Notes",
+  "data_dir": "Murmur",
+  "api_url": "https://raspberrypi.local:8444",
+  "ca_file": "C:/Users/you/AppData/Local/Murmur/pi-ca.pem",
+  "token_env": "MURMUR_PC_TOKEN",
+  "interval": 60,
+  "timeout": 15,
+  "delete_grace": 120,
+  "log_level": "INFO"
+}

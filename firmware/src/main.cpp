@@ -4,6 +4,7 @@
 #include "campus_wifi.h"
 #include "campus_profile.h"
 #include "diagnostics.h"
+#include "power_log.h"
 #include <cstring>
 #include <USB.h>
 #include "fonts.h"
@@ -1283,6 +1284,8 @@ void serialSettings() {
         } else if (!strcmp(buf,"perf")) {
             usbSerial.printf("perf fps=%lu loop_max_ms=%lu\n",(unsigned long)measuredFps,(unsigned long)slowestLoop);
             slowestLoop=0;
+        } else if (!strcmp(buf,"power") || !strncmp(buf,"power ",6)) {
+            powerCommand(buf[5]?buf+6:"",usbSerial);
         } else if (!strcmp(buf,"levels")) {
             printMicLevels(usbSerial);
         } else if (!strncmp(buf,"time ",5)) {
@@ -1321,6 +1324,7 @@ void setup() {
     sleepOption=constrain(int(prefs.getUChar("sleep",1)),0,3);
     model::load();
     piSync::begin();
+    beginPowerLog();
     battery=batteryPercent();
     isCharging=chargeSample=charging();
     chargeChangedAt=millis();
@@ -1344,6 +1348,7 @@ void loop() {
         auto result=serviceRecording();
         if (result!=AudioResult::Ok) audioError(result);
     }
+    powerLogTick(now,screen!=Screen::Sleep,recordingActive());
     diagLoopPhase(2);
     pollKeys(now);
     if (screen==Screen::ReleasePower || screen==Screen::UnplugPower) {

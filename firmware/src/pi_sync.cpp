@@ -24,13 +24,15 @@ using std::string;
 struct Row {
     int id;
     string title, detail, plan, due;
-    bool done, promoted, dirty;
+    bool done, promoted;
+    int dirty; // Bit 0: completion. Bit 1: promotion.
+    string operation;
     bool operator==(const Row &r) const {
         return id==r.id && title==r.title && detail==r.detail && plan==r.plan && due==r.due &&
-               done==r.done && promoted==r.promoted && dirty==r.dirty;
+               done==r.done && promoted==r.promoted && dirty==r.dirty && operation==r.operation;
     }
 };
-struct Edit { int id; bool done,promoted; };
+struct Edit { int id; string operation; };
 struct Pair { char host[64]; char key[65]; };
 Pair pair{};
 Preferences cfg;
@@ -99,7 +101,8 @@ bool decode(cJSON *array,std::vector<Row> &dest) {
         if (!cJSON_IsNumber(cJSON_GetArrayItem(a,0)) || !cJSON_IsString(cJSON_GetArrayItem(a,1)) ||
             !cJSON_IsNumber(cJSON_GetArrayItem(a,5)) || !cJSON_IsNumber(cJSON_GetArrayItem(a,6))) return false;
         dest.push_back({number(0),field(a,1),field(a,2),field(a,3),field(a,4),bool(number(5)),bool(number(6)),
-                        cJSON_GetArraySize(a)>7 && number(7)!=0});
+                        cJSON_GetArraySize(a)>8 ? number(7) : (cJSON_GetArraySize(a)>7 && number(7) ? 3 : 0),
+                        field(a,8)});
     }
     return true;
 }
@@ -112,7 +115,8 @@ bool save(const std::vector<Row> &data) {
         cJSON *a=cJSON_CreateArray(); cJSON_AddItemToArray(doc.get(),a);
         cJSON_AddItemToArray(a,cJSON_CreateNumber(r.id));
         for (auto s:{&r.title,&r.detail,&r.plan,&r.due}) cJSON_AddItemToArray(a,cJSON_CreateString(s->c_str()));
-        for (bool b:{r.done,r.promoted,r.dirty}) cJSON_AddItemToArray(a,cJSON_CreateNumber(b));
+        for (int b:{int(r.done),int(r.promoted),r.dirty}) cJSON_AddItemToArray(a,cJSON_CreateNumber(b));
+        cJSON_AddItemToArray(a,cJSON_CreateString(r.operation.c_str()));
     }
     std::unique_ptr<char,decltype(&free)> text(cJSON_PrintUnformatted(doc.get()),free);
     if (!text) return false;
@@ -225,9 +229,11 @@ bool apply(Job &j) {
     for (auto &old:rows) {
         if (!old.dirty) continue;
         bool acknowledged=false;
-        for (auto &e:j.edits) if (e.id==old.id && e.done==old.done && e.promoted==old.promoted) acknowledged=true;
+        for (auto &e:j.edits) if (e.id==old.id && e.operation==old.operation) acknowledged=true;
         if (!acknowledged) for (auto &r:next) if (r.id==old.id) {
-            r.done=old.done; r.promoted=old.promoted; r.dirty=true;
+            if (old.dirty & 1) r.done=old.done;
+            if (old.dirty & 2) r.promoted=old.promoted;
+            r.dirty=old.dirty; r.operation=old.operation;
         }
     }
     if (next!=rows) {
@@ -266,7 +272,7 @@ bool keepRadio(){ return paired() && session && !finished && millis()-sessionAt<
 bool needsWake(){return paired() && (pending() || cloudPending || status==Status::Failed);}
 void request(){requested=true; finished=false; nextAttempt=0; startSavedCampusWifi();}
 void recordingSaved(){scanned=false; requested=true; finished=false; ++recordings;}
-unsigned pending(){ unsigned n=recordings; for(auto &r:rows) n+=r.dirty; return n; }
+unsigned pending(){ unsigned n=recordings; for(auto &r:rows) n+=r.dirty!=0; return n; }
 const char *statusText(){
     using ui::tr;
     switch(status) {
@@ -311,10 +317,17 @@ bool service(bool recording,bool pickerOpen) {
         for (auto &r:rows) if(r.dirty) {
             if (!active->edits.empty()) active->editsJson+=",";
             char item[64]; snprintf(item,sizeof(item),"[%d,%d,%d]",r.id,r.done,r.promoted);
-            active->editsJson+=item; active->edits.push_back({r.id,r.done,r.promoted});
+            active->editsJson+=item; active->edits.push_back({r.id,r.operation});
+        }
+        active->editsJson+="],\"task_operations\":{";
+        bool comma=false;
+        for (const auto &r:rows) if (r.dirty && !r.operation.empty()) {
+            char op[80];
+            snprintf(op,sizeof(op),"%s\"%d\":[%d,\"%s\"]",comma?",":"",r.id,r.dirty,r.operation.c_str());
+            active->editsJson+=op; comma=true;
         }
         char cursor[100];
-        snprintf(cursor,sizeof(cursor),"],\"notes_after\":%d,\"notes_version\":\"%s\"}",lockNotes::cursor(),lockNotes::version().c_str());
+        snprintf(cursor,sizeof(cursor),"},\"notes_after\":%d,\"notes_version\":\"%s\"}",lockNotes::cursor(),lockNotes::version().c_str());
         active->editsJson+=cursor;
     }
     status=Status::Working;
@@ -348,7 +361,10 @@ bool done(int i){return rows[i].done;}
 bool change(int i,bool promote) {
     auto &r=rows[i]; const Row old=r;
     if(promote) r.promoted=true; else r.done=!r.done;
-    r.dirty=true;
+    r.dirty|=promote?2:1;
+    char op[17];
+    snprintf(op,sizeof(op),"%08x%08x",unsigned(esp_random()),unsigned(esp_random()));
+    r.operation=op;
     if (!save(rows)){r=old; return false;}
     rebuild(); requested=true;
     return true;

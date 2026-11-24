@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import cloud
+import bridge_api
 
 DATA = Path(os.environ.get("MURMUR_DATA", "."))
 PART = 256 * 1024
@@ -53,6 +54,8 @@ def initialize():
     with database() as db:
         db.execute("PRAGMA journal_mode=WAL")
         db.executescript(SCHEMA)
+        bridge_api.migrate(db)
+        db.execute("CREATE TABLE IF NOT EXISTS device_edits(id INTEGER PRIMARY KEY, operation TEXT)")
         for event in ("INSERT", "UPDATE", "DELETE"):
             db.execute(f"""CREATE TRIGGER IF NOT EXISTS notes_after_{event} AFTER {event} ON notes BEGIN
                        UPDATE note_version SET token=lower(hex(randomblob(12))) WHERE id=1; END""")
@@ -121,14 +124,18 @@ def note_page(db, token, after):
     if current != token:
         after = 0
     records = db.execute("""SELECT n.id, r.recorded_at, n.body FROM notes n
-                            JOIN recordings r ON r.name=n.source
-                            WHERE n.id>? AND trim(n.body)<>'' ORDER BY n.id LIMIT ?""", (after, NOTE_PAGE + 1)).fetchall()
+                            LEFT JOIN recordings r ON r.name=n.source
+                            WHERE n.show_on_device AND n.id>? AND trim(n.body)<>'' ORDER BY n.id LIMIT ?""",
+                         (after, NOTE_PAGE + 1)).fetchall()
     return {"version": current, "after": after, "more": len(records) > NOTE_PAGE,
             "items": [[i, stamp or "", excerpt(body)] for i, stamp, body in records[:NOTE_PAGE]]}
 
 
 def sync(changes):
     note_request = isinstance(changes, dict)
+    operations = changes.get("task_operations", {}) if note_request else {}
+    if not isinstance(operations, dict):
+        raise ValueError("invalid device operations")
     if note_request:
         token, after = changes.get("notes_version"), changes.get("notes_after")
         if not isinstance(token, str) or len(token) > 64 or type(after) is not int or not 0 <= after < 2**31:
@@ -142,7 +149,27 @@ def sync(changes):
             if (not isinstance(edit, list) or len(edit) != 3 or type(edit[0]) is not int
                     or any(type(v) is not int or v not in (0, 1) for v in edit[1:])):
                 raise ValueError("invalid task edit")
-            db.execute("UPDATE tasks SET done=?, promoted=? WHERE id=?", (edit[1], edit[2], edit[0]))
+            task_id, done, promoted = edit
+            mask = 3
+            if str(task_id) in operations:
+                op = operations[str(task_id)]
+                if (not isinstance(op, list) or len(op) != 2 or type(op[0]) != int or op[0] not in (1, 2, 3)
+                        or not isinstance(op[1], str) or not re.fullmatch("[0-9a-f]{16}", op[1])):
+                    raise ValueError("invalid operation")
+                mask, token = op
+                previous = db.execute("SELECT operation FROM device_edits WHERE id=?", (task_id,)).fetchone()
+                if previous and previous[0] == token:
+                    continue
+                db.execute("INSERT OR REPLACE INTO device_edits VALUES(?,?)", (task_id, token))
+            values = {}
+            if mask & 1:
+                values["done"] = done
+            if mask & 2:
+                values["promoted"] = promoted
+            fields = ",".join(k+"=?" for k in values)
+            changed = " OR ".join(k+" IS NOT ?" for k in values)
+            db.execute(f"UPDATE tasks SET {fields} WHERE id=? AND ({changed})",
+                       (*values.values(), task_id, *values.values()))
         fields = "id,title,details,planned_at,due_at,done,promoted"
         tasks = [list(r) for r in db.execute("SELECT " + fields + " FROM tasks ORDER BY id")]
         pending = db.execute("SELECT count(*) FROM recordings WHERE state='queued'").fetchone()[0]
@@ -187,7 +214,8 @@ def process(row):
             return
         db.executemany("INSERT INTO tasks(source,title,details,planned_at,due_at) VALUES(?,?,?,?,?)",
                        [(name, *task) for task in tasks])
-        db.executemany("INSERT INTO notes(source,body) VALUES(?,?)", [(name,n) for n in notes])
+        db.executemany("INSERT INTO notes(source,title,body) VALUES(?,?,?)",
+                       [(name, title, body) for title, body in notes])
 
 
 def worker():
@@ -262,5 +290,14 @@ if __name__ == "__main__":
     tls.set_psk_server_callback(lambda identity: key if identity == "murmur" else b"")
     with Server(("", int(os.environ.get("MURMUR_PORT","8443"))), Handler) as server:
         server.tls = tls
+        if pc_token := os.environ.get("MURMUR_PC_TOKEN"):
+            if len(pc_token) < 32:
+                raise ValueError("PC credential too short")
+            pc = Server(("", int(os.environ.get("MURMUR_PC_PORT", "8444"))), bridge_api.Handler)
+            pc.tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            pc.tls.load_cert_chain(os.environ["MURMUR_PC_CERT"], os.environ["MURMUR_PC_KEY"])
+            pc.database = database
+            pc.authorization = ("Bearer " + pc_token).encode()
+            threading.Thread(target=pc.serve_forever, daemon=True).start()
         threading.Thread(target=worker, daemon=True).start()
         server.serve_forever()
