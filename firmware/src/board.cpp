@@ -1,4 +1,5 @@
 #include "board.h"
+#include <Arduino.h>
 #include <Wire.h>
 #include <driver/spi_master.h>
 #include <esp_heap_caps.h>

@@ -69,7 +69,7 @@ Connect a USB data cable and open the removable drive in File Explorer. Windows 
 
 Finish any file copy before starting a recording. Pressing PLUS gives the recorder exclusive use of the card, so a transfer still in progress can stop. Once recording finishes, the firmware releases the card and signals a media change to the host. Connecting USB during a recording also waits for local file closure. Refresh File Explorer after saving, or reconnect the cable after explicitly ejecting the drive.
 
-Provision HKUSTGZ once with the [USB campus login helper](../docs/campus-wifi.md#getting-credentials-onto-the-device). Online sessions automatically synchronize network time. After a fully dated login the device remembers the campus server certificate and can recover time following a cold shutdown, then reconnect with full date validation. Settings → Clock and USB provide a fallback after a certificate change. Recording and task controls work offline. After [pairing with the Pi](../backend/README.md), new recordings upload over TLS and extracted tasks sync back to a persistent card cache. The [Obsidian PC bridge](../pc_bridge/README.md) synchronizes tasks, memos and lock-screen selection through the Pi. The Claude page shows its empty state. Sleep turns off the backlight and lowers the CPU clock.
+Provision HKUSTGZ once with the [USB campus login helper](../docs/campus-wifi.md#getting-credentials-onto-the-device). Online sessions automatically synchronize network time. After a fully dated login the device remembers the campus server certificate and can recover time following a cold shutdown, then reconnect with full date validation. Settings → Clock and USB provide a fallback after a certificate change. Recording and task controls work offline. After [pairing with the Pi](../backend/README.md), new recordings upload over TLS and extracted tasks sync back to a persistent card cache. The [Obsidian PC bridge](../pc_bridge/README.md) synchronizes tasks, memos and lock-screen selection through the Pi. The Claude page shows its empty state. Sleep turns off the backlight and lowers the CPU clock. While awake, the CPU also drops to 80 MHz once the screen is still and returns to 240 MHz on touch, key presses, screen changes or animations.
 
 ## Battery consumption log
 
@@ -89,7 +89,7 @@ USB powers the board while it is attached, so drain is only meaningful in minute
 
 The paired lock screen cycles through synced note excerpts on the card. NEXT or a horizontal swipe advances to another note. The text stays in the original spoken language. The timestamp follows the display-language setting.
 
-The panel is driven over SPI with DMA (`esp_lcd`) from two 40-line buffers, so LVGL draws the next strip while the previous one is sent. LVGL refreshes every 15 ms. Send `perf` over USB serial to read the measured frame rate and the slowest main-loop pass since the last `perf`.
+The panel is driven over SPI with DMA (`esp_lcd`) from two 40-line buffers, so LVGL draws the next strip while the previous one is sent. LVGL refreshes every 15 ms. Send `perf` over USB serial to read the measured frame rate, the slowest main-loop pass since the last `perf`, and the current CPU clock. The simulator counts refreshes in virtual time.
 
 Check UI changes in the host simulator before flashing: it runs the real `src/main.cpp` with the real fonts and writes screenshots and animation frames. See [sim/README.md](sim/README.md).
 

@@ -1,6 +1,7 @@
 #include "campus_wifi.h"
-#include "pi_sync.h"
+#include <Arduino.h>
 #include "campus_profile.h"
+#include "pi_sync.h"
 #include "diagnostics.h"
 #include <WiFi.h>
 #include <esp_wifi.h>

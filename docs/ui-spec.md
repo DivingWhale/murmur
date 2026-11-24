@@ -207,7 +207,7 @@ All motion eases out, matching the prototype's CSS.
   - Up: unlock.
   - Left: All settings, and Brightness or Clock from Settings. Right: back from those screens.
   - Other screen changes (picker, recording, Saved, errors, sleep and wake) switch without motion.
-- **Quick panel:** a shade that covers and uncovers the page without fading (§4.11). A full-screen fade with the bright brightness bar showed tearing on the panel, which has no tear-effect line.
+- **Quick panel:** a shade that covers and uncovers the page without fading (§4.11). The page stops redrawing while the shade fully covers it and reappears as soon as the shade moves. A full-screen fade with the bright brightness bar showed tearing on the panel, which has no tear-effect line.
 - **Pages:** follow the finger (§4.10).
 - **Edge bounce:** a swipe past the first or last page without dragging nudges the screen 14px toward the swipe at 30% of 0.34 s, 4px back at 65%, then rests.
 - **Content within a screen** (lock-screen notes, the When I Have Time line, picker titles): enters 28px from the side it comes from while fading in from transparent, 0.28 s.

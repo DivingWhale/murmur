@@ -1,5 +1,7 @@
 #pragma once
-#include <Arduino.h>
+#include <cstdint>
+
+class Print;
 
 bool campusOnline();
 uint32_t campusNetworkTime();

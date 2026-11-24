@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include "audio.h"
 #include "board.h"
 #include "card_usb.h"
@@ -63,9 +64,11 @@ lv_obj_t *settingsList, *settingRows[SettingCount], *brightnessFill, *brightPerc
 constexpr int pageWidth=240;
 constexpr Screen pages[]={Screen::Today,Screen::Claude,Screen::MD};
 lv_obj_t *pageTrack;
-// Keep the page alive under the quick panel so moving the shade reveals it immediately.
+// The quick panel is a pull-down shade (§4.11) in its own layer above the page it came from, which
+// stays built underneath so moving the shade reveals it immediately. Closed, it sits one screen up.
 lv_obj_t *shade;
 bool shadeDragging, panelDragging, shadeAnimating;
+constexpr int shadeClosed=-240;
 bool draggingPages=false;
 int pageIndex(Screen value) {
     for (int i=0;i<3;++i) if (pages[i]==value) return i;
@@ -85,12 +88,23 @@ void removeShade() {
     }
     shadeDragging=panelDragging=shadeAnimating=false;
 }
+// While the open panel covers the page, the page is hidden: its scrolling titles then stop redrawing
+// unseen pixels (and the panel's entrance fade from Settings shows no page). It is shown again as
+// soon as the panel moves.
+void coverPage() {
+    if (pageTrack) lv_obj_add_flag(pageTrack,LV_OBJ_FLAG_HIDDEN);
+}
+void revealPage() {
+    if (pageTrack) lv_obj_clear_flag(pageTrack,LV_OBJ_FLAG_HIDDEN);
+}
 void settleShade(int to) {
     const int from=lv_obj_get_style_translate_y(shade,0);
     lv_anim_del(shade,moveShade);
+    if (to==shadeClosed) revealPage();
     shadeAnimating=from!=to;
     if (!shadeAnimating) {
-        if (to==-240) removeShade();
+        if (to==shadeClosed) removeShade();
+        else if (to==0) coverPage();
         return;
     }
     const int ms=constrain(abs(to-from)*280/240,120,280);
@@ -101,7 +115,8 @@ void settleShade(int to) {
     lv_anim_set_path_cb(&a,lv_anim_path_ease_out);
     lv_anim_set_ready_cb(&a,[](lv_anim_t *done){
         shadeAnimating=false;
-        if (done->end_value==-240) removeShade();
+        if (done->end_value==shadeClosed) removeShade();
+        else if (done->end_value==0) coverPage();
     });
     lv_anim_start(&a);
 }
@@ -171,13 +186,13 @@ void go(Screen target) {
         screen=renderedScreen=target;
         lastInput=entered=interacted=rotated=millis();
         panelDragging=false;
-        settleShade(-240);
+        settleShade(shadeClosed);
         return;
     }
     removeShade();
     if (target==Screen::Panel && pageTrack && pageIndex(screen)>=0 && screen==renderedScreen) {
         shade=buildShade();
-        moveShade(shade,-240);
+        moveShade(shade,shadeClosed);
         releaseShade(true,screen);
         return;
     }
@@ -563,8 +578,8 @@ void storeBrightness() {
     if (brightness!=savedBrightness && prefs.putUChar("brightness",brightness))
         savedBrightness=brightness;
 }
-void panelView() {
-    auto *panel=box(0,0,240,240,0x121418);
+// Fills the quick panel's layer.
+void panelView(lv_obj_t *panel) {
     panelRoot=panel;
     icon(panel,campusOnline()?Icon::Wifi:Icon::WifiOff,15,10,15,muted);
     label(31,22-fontFor(14)->line_height/2,110,campusOnline()?"HKUSTGZ":tr("未连接","Disconnected"),14);
@@ -729,6 +744,7 @@ void pagesView(Screen page) {
 }
 void render() {
     dirty=false;
+    if (screen!=Screen::Sleep) setLowPower(false); // Rebuilding a screen is the heaviest UI work.
     if (screen==Screen::Settings && settingsList) settingsY=lv_obj_get_scroll_y(settingsList);
     if (taskList) taskScrollY=lv_obj_get_scroll_y(taskList);
     taskList=nullptr;
@@ -752,6 +768,7 @@ void render() {
     case Screen::Picker: pickerView(); break;
     case Screen::Panel:
         pagesView(panelFrom);
+        coverPage();
         shade=buildShade();
         break;
     case Screen::Settings: settingsView(); break;
@@ -921,7 +938,7 @@ bool holdTarget(int pin,Screen &target) {
 }
 void holdOverlay(Screen target,int percent) {
     if (!overlay) {
-        overlay=box(0,0,240,240,0,0,0,0,screen==Screen::Panel?shade:pageLayer);
+        overlay=box(0,0,240,240,0,0,0,0,lv_scr_act()); // Above the page and any moving shade.
         lv_obj_set_style_bg_opa(overlay,185,0);
         const char *s=tr("返回","Back");
         Icon glyph=Icon::Back;
@@ -1043,12 +1060,8 @@ void gesture(int x,int y,int dx,int dy) {
 }
 // Builds the quick panel in its own layer above the current screen, for pulling it down.
 lv_obj_t *buildShade() {
-    lv_obj_t *page=pageLayer;
-    pageLayer=box(0,0,240,240,0x121418,0,0,0,lv_scr_act());
-    lv_obj_t *layer=pageLayer;
-    panelRoot=nullptr;
-    panelView();
-    pageLayer=page;
+    auto *layer=box(0,0,240,240,0x121418,0,0,0,lv_scr_act());
+    panelView(layer);
     return layer;
 }
 // The shade's bottom edge follows the finger.
@@ -1056,7 +1069,7 @@ void pullShade(int fingerY) { moveShade(shade,min(0,fingerY-240)); }
 void releaseShade(bool open,Screen from) {
     shadeDragging=false;
     if (!open) {
-        settleShade(-240);
+        settleShade(shadeClosed);
         return;
     }
     panelFrom=from;
@@ -1112,6 +1125,7 @@ void pollTouch(uint32_t now) {
         if (screen==Screen::Panel && from==screen && !sliderMoved && dy<=-8 && -dy>abs(dx)) {
             panelDragging=true;
             settingsTouch=false;
+            revealPage();
             moveShade(shade,dy);
             return;
         }
@@ -1249,6 +1263,15 @@ void updateView(uint32_t now) {
     }
     if (chargeChanged || levelChanged) refreshBatteryWidgets();
 }
+// Full speed while the user is acting or something on screen moves; 80 MHz once the screen is still.
+// Scrolling titles move only a few pixels per frame and stay smooth at 80 MHz.
+void chooseClock(uint32_t now) {
+    const bool busy=screen!=Screen::Sleep && (recordingActive() || dirty || overlay ||
+        draggingPages || shadeDragging || panelDragging || shadeAnimating || settingsTouch ||
+        int32_t(now-motionEnds)<0 || now-lastInput<1500 || now-rotated<500 ||
+        (settingsList && lv_obj_is_scrolling(settingsList)) || (taskList && lv_obj_is_scrolling(taskList)));
+    setLowPower(!busy);
+}
 // Display refresh rate over the last second and the slowest loop since the last `perf`.
 uint32_t measuredFps, slowestLoop;
 void measurePerformance(uint32_t now,uint32_t loopStart) {
@@ -1282,7 +1305,8 @@ void serialSettings() {
         } else if (!strcmp(buf,"en") || !strcmp(buf,"zh")) {
             en=!strcmp(buf,"en"); prefs.putBool("english",en); dirty=true;
         } else if (!strcmp(buf,"perf")) {
-            usbSerial.printf("perf fps=%lu loop_max_ms=%lu\n",(unsigned long)measuredFps,(unsigned long)slowestLoop);
+            usbSerial.printf("perf fps=%lu loop_max_ms=%lu mhz=%lu\n",(unsigned long)measuredFps,
+                             (unsigned long)slowestLoop,(unsigned long)cpuMhz());
             slowestLoop=0;
         } else if (!strcmp(buf,"power") || !strncmp(buf,"power ",6)) {
             powerCommand(buf[5]?buf+6:"",usbSerial);
@@ -1370,6 +1394,7 @@ void loop() {
     if (piSync::service(recordingActive(),screen==Screen::Picker)) dirty=true;
     diagLoopPhase(6);
     updateView(millis());
+    chooseClock(millis());
     diagLoopPhase(7);
     lv_timer_handler();
     diagLoopPhase(8);

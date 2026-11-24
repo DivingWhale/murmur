@@ -21,6 +21,7 @@ wait 600
 film brightness-pop 330 30
 tap 20 16
 wait 600
+film settings-pop 330 30
 tap 20 16
 wait 400
 swipe 120 120 120 20 100
