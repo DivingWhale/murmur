@@ -1,6 +1,6 @@
 # Lock Screen Notes — API Contract
 
-The paired handheld cycles through notes selected on the Pi. Recorded and manual notes start with lock-screen display enabled. The Obsidian bridge edits the boolean `show_on_device` through the PC edit endpoint. Toggling it updates the Pi snapshot version, including when the selection becomes empty. The Pi and handheld use their existing TLS sync connection. [PC bridge setup and API](../pc_bridge/README.md)
+The paired handheld cycles through notes selected on the Pi. Recorded and manual notes start with lock-screen display disabled. Existing selections are preserved. The Obsidian bridge edits the boolean `show_on_device` through the PC edit endpoint. Toggling it updates the Pi snapshot version, including when the selection becomes empty. The Pi and handheld use their existing TLS sync connection. [PC bridge setup and API](../pc_bridge/README.md)
 
 ## Deployed Pi and handheld protocol
 
