@@ -29,7 +29,7 @@ A flash reset and a complete loss of board power are different test conditions. 
 
 ## Open items
 
-- Measure `perf` on hardware with the DMA display driver (not yet flashed).
+- Measure `perf` during page swipes and quick-panel animations on hardware.
 - Check that a campus login and a USB file copy both still work while the awake screen is still and the CPU is at 80 MHz.
 
 - The cause of the Windows Code 43 seen on 2026-11-21 is not established.
@@ -38,6 +38,16 @@ A flash reset and a complete loss of board power are different test conditions. 
 ## Log
 
 All tests on a Windows PC unless noted.
+
+### 2026-11-24 main integration: targeted USB regression
+
+The integrated firmware (ELF ID `d3cd7e5ba6dea8ff`) passed four consecutive application-only flashes with the card and cable left in place. Each cycle switched from application `303A:4003` on COM5 to ROM `303A:1001` on COM3, passed esptool write verification at `0x10000`, and restored COM5 and an automatically mounted F drive. The four boot IDs were `5b2744e1`, `34aca907`, `6d32666b` and `c38565e3`. The same serial handle answered throughout each 45-second mounted check. The names, lengths and SHA-256 hashes of all 26 existing WAVs matched the pre-flash inventory on every cycle.
+
+Each boot recorded a battery sample, reported 80 MHz with the screen asleep, and synced with the paired Pi over campus Wi-Fi (HTTP 200, one task, two notes and an empty queue). The final card snapshot contained two lock-screen notes, matching the device's serial response.
+
+After the fourth flash, with Wi-Fi off, the host read all 74,547,600 bytes of `R6211200.FIR` using unbuffered 256 KiB reads. The expected SHA-256 `e72dd74eeaeef56130f8a88fab117c1bc08b9bf43d0b1ae95552600a6f7269ca` matched. The same open serial handle answered every eight seconds through completion, with boot ID `c38565e3`.
+
+All six simulator scenes ran. The 21 images with existing references matched pixel for pixel. The additional Settings-to-panel film showed the panel moving over the background with the underlying page hidden. The simulator reported 240 MHz after input and 80 MHz when idle, and reached zero redraws with the panel fully open. Physical touch and button interactions and animation frame rates were not checked in this run. The Pi and Obsidian suites passed all 19 tests.
 
 ### 2026-11-24 USB DMA fix with battery logging, Pi sync and lock-screen notes
 
